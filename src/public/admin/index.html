@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telemetry Admin</title>
+  <link rel="stylesheet" href="/admin/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚡ Telemetry Admin</div>
+    <nav id="nav" class="nav hidden">
+      <button data-view="sites" class="nav-btn active">Sites</button>
+      <button data-view="account" class="nav-btn">Account</button>
+      <span id="userBadge" class="badge"></span>
+      <button id="logoutBtn" class="btn btn-ghost">Logout</button>
+    </nav>
+  </header>
+
+  <main id="app" class="container">
+
+    <!-- Auth -->
+    <section id="authView" class="card">
+      <h1>Sign in</h1>
+      <div class="tabs">
+        <button class="tab active" data-tab="login">Login</button>
+        <button class="tab" data-tab="register">Register</button>
+      </div>
+      <form id="loginForm" class="form">
+        <label>Email <input type="email" name="email" required /></label>
+        <label>Password <input type="password" name="password" required minlength="8" /></label>
+        <button class="btn" type="submit">Login</button>
+        <p id="loginErr" class="err"></p>
+      </form>
+      <form id="registerForm" class="form hidden">
+        <label>Name (optional) <input type="text" name="name" /></label>
+        <label>Email <input type="email" name="email" required /></label>
+        <label>Password <input type="password" name="password" required minlength="8" /></label>
+        <button class="btn" type="submit">Register</button>
+        <p id="registerErr" class="err"></p>
+      </form>
+    </section>
+
+    <!-- Sites list -->
+    <section id="sitesView" class="hidden">
+      <div class="row">
+        <h2>Sites</h2>
+        <button id="newSiteBtn" class="btn">+ New site</button>
+      </div>
+      <p id="sitesErr" class="err"></p>
+      <div id="sitesList" class="sites-grid"></div>
+
+      <form id="siteForm" class="card hidden">
+        <h3 id="siteFormTitle">Create site</h3>
+        <label>Name <input type="text" name="name" required maxlength="160" /></label>
+        <label class="check"><input type="checkbox" name="isPublic" checked /> Public</label>
+        <label id="ownerWrap" class="hidden">Owner
+          <select name="ownerId"><option value="">(auto)</option></select>
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit">Save</button>
+          <button class="btn btn-ghost" type="button" data-cancel>Cancel</button>
+        </div>
+        <p id="siteFormErr" class="err"></p>
+      </form>
+    </section>
+
+    <!-- Site detail -->
+    <section id="detailView" class="hidden">
+      <button class="btn btn-ghost" id="backBtn">← Back</button>
+      <div class="card">
+        <h2 id="detailName"></h2>
+        <div id="detailMeta" class="meta"></div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" id="editSiteBtn">Edit</button>
+          <button class="btn btn-warn" id="regenKeyBtn">Regenerate API key</button>
+          <button class="btn btn-danger" id="deleteSiteBtn">Delete</button>
+        </div>
+
+        <form id="editSiteForm" class="card hidden">
+          <label>Name <input type="text" name="name" required maxlength="160" /></label>
+          <label class="check"><input type="checkbox" name="isPublic" /> Public</label>
+          <label id="editOwnerWrap" class="hidden">Owner
+            <select name="ownerId"><option value="">(auto)</option></select>
+          </label>
+          <div class="actions">
+            <button class="btn" type="submit">Save</button>
+            <button class="btn btn-ghost" type="button" data-cancel>Edit cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Entities (Home Assistant mappings)</h3>
+        <p class="hint">Map each <code>kind</code> to a Home Assistant <code>entity_id</code>. Max 4.</p>
+        <form id="entitiesForm" class="entities">
+          <div id="entityRows"></div>
+          <button class="btn" type="submit">Save entities</button>
+          <p id="entitiesMsg" class="err"></p>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Latest readings</h3>
+        <div id="latestGrid" class="latest-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3>Readings (last 24h)</h3>
+        <div class="row">
+          <label>Kind
+            <select id="kindFilter">
+              <option value="">all</option>
+              <option value="grid">grid</option>
+              <option value="solar">solar</option>
+              <option value="consumer">consumer</option>
+              <option value="battery">battery</option>
+            </select>
+          </label>
+          <button class="btn btn-ghost" id="refreshReadings">Refresh</button>
+        </div>
+        <canvas id="chart" width="900" height="320"></canvas>
+        <p id="readingsMsg" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- Account -->
+    <section id="accountView" class="hidden">
+      <div class="card">
+        <h2>Account</h2>
+        <pre id="accountInfo"></pre>
+        <p class="hint">JWT is stored in <code>localStorage</code> under <code>np_token</code>.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>

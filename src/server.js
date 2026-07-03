@@ -13,6 +13,7 @@ const siteRoutes = require('./routes/sites');
 const publicRoutes = require('./routes/public');
 const userRoutes = require('./routes/users');
 const { attachRawWs } = require('./ws/raw');
+const { attachEventsWs } = require('./ws/events');
 const cleanup = require('./jobs/cleanup');
 
 // Ensure any startup/runtime crash is captured in the log file instead of
@@ -57,6 +58,19 @@ function buildApp() {
   }));
   app.get(/^\/admin\/?$/, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html')));
 
+  // Public read-only dashboard (static). Mounted at root so it is the site
+  // landing page; API routes under /api take precedence.
+  app.use('/', express.static(path.join(__dirname, 'public', 'site'), {
+    index: 'index.html',
+    fallthrough: true,
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    },
+  }));
+  app.get(/^\/$/, (req, res) => res.sendFile(path.join(__dirname, 'public', 'site', 'index.html')));
+
   app.use('/api/auth', authRoutes);
   app.use('/api/sites', siteRoutes);
   app.use('/api/users', userRoutes);
@@ -85,9 +99,31 @@ async function start() {
   const app = buildApp();
   const server = http.createServer(app);
 
-  // Raw WebSocket (RFC 6455) endpoint for plain WS clients, on /ws.
-  const rawWss = attachRawWs(server, '/ws');
+  // Two WebSocket endpoints share one http.Server. Both WSS run in noServer
+  // mode and a single 'upgrade' handler dispatches by path, so the two
+  // servers never both touch the same socket (which previously produced
+  // corrupt frames / 400 responses).
+  const rawWss = attachRawWs();
+  const eventsWss = attachEventsWs();
   app.set('rawWss', rawWss);
+  app.set('eventsWss', eventsWss);
+
+  server.on('upgrade', (req, socket, head) => {
+    let pathname;
+    try {
+      pathname = new URL(req.url, 'http://localhost').pathname;
+    } catch {
+      socket.destroy();
+      return;
+    }
+    if (pathname === '/ws') {
+      rawWss.handleUpgrade(req, socket, head, (ws) => rawWss.emit('connection', ws, req));
+    } else if (pathname === '/events') {
+      eventsWss.handleUpgrade(req, socket, head, (ws) => eventsWss.emit('connection', ws, req));
+    } else {
+      socket.destroy();
+    }
+  });
 
   cleanup.start();
 
@@ -99,6 +135,7 @@ async function start() {
     logger.info('shutdown signal received', { signal: sig });
     cleanup.stop();
     rawWss.close();
+    eventsWss.close();
     server.close(() => pool.end().then(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10000).unref();
   };

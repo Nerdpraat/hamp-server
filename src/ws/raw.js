@@ -6,9 +6,10 @@ const Entity = require('../models/entity');
 
 const readingSchema = require('./shared').readingSchema;
 const normalize = require('./shared').normalize;
+const hub = require('./hub');
 
 /**
- * Attach a raw WebSocket server (RFC 6455) on the given path.
+ * Create a raw WebSocket server (RFC 6455) in noServer mode.
  *
  * Clients connect to ws://host:port/ws and send JSON messages of the form:
  *   { "type": "reading", "reading": { "entityId": "...", "value": 123.4, "unit": "W", "ts": 123 } }
@@ -18,9 +19,13 @@ const normalize = require('./shared').normalize;
  *   { "type": "auth", "api_key": "np_..." }
  * Until authenticated the socket is closed with code 4001 ("unauthorized").
  * The api key may also be supplied via the `x-api-key` header or `?api_key=` query.
+ *
+ * The caller is responsible for routing the HTTP 'upgrade' event to this
+ * server's handleUpgrade (see src/server.js) so that multiple WS endpoints
+ * can share one http.Server without colliding.
  */
-function attachRawWs(server, path = '/ws') {
-  const wss = new WebSocketServer({ server, path });
+function attachRawWs() {
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws, req) => {
     const ip = req.socket.remoteAddress;
@@ -86,7 +91,9 @@ function attachRawWs(server, path = '/ws') {
             return;
           }
           await Entity.ensure(site.id, { entityId: parsed.data.entityId, unit: parsed.data.unit });
+          const recordedAt = normalize(parsed.data, site.id).recordedAt || new Date();
           await Reading.add(normalize(parsed.data, site.id));
+          broadcastReading(site, parsed.data, recordedAt);
           ws.send(JSON.stringify({ type: 'ack', ok: true }));
         } else if (msg.type === 'readings') {
           const list = Array.isArray(msg.readings) ? msg.readings : [];
@@ -105,6 +112,7 @@ function attachRawWs(server, path = '/ws') {
             }
           }
           const affected = await Reading.addMany(rows);
+          for (const r of list) broadcastReading(site, r, normalize(r, site.id).recordedAt);
           ws.send(JSON.stringify({ type: 'ack', ok: true, stored: affected }));
         } else {
           ws.send(JSON.stringify({ type: 'error', error: 'unknown message type' }));
@@ -123,8 +131,32 @@ function attachRawWs(server, path = '/ws') {
     });
   });
 
-  logger.info('raw ws server attached', { path });
+  logger.info('raw ws server created', { path: '/ws' });
   return wss;
+}
+
+/**
+ * Fan a freshly-ingested reading out to public subscribers via the hub.
+ * Only public sites are broadcast so private data never leaks. The payload
+ * mirrors Reading.publicView so the frontend can group by the opaque id.
+ */
+function broadcastReading(site, parsed, recordedAt) {
+  if (!site || !site.is_public) return;
+  const entityId = parsed.entityId;
+  const value = Number(parsed.value);
+  const unit = parsed.unit || 'W';
+  const event = {
+    type: 'reading',
+    site: { id: site.id, slug: site.slug, name: site.name },
+    reading: {
+      id: Reading.publicId(site.id, entityId),
+      value,
+      unit,
+      name: null,
+      recordedAt: (recordedAt || new Date()).toISOString(),
+    },
+  };
+  hub.broadcast(event);
 }
 
 module.exports = { attachRawWs };

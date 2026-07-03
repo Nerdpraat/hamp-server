@@ -38,6 +38,7 @@ export default [
         alert: 'readonly',
         confirm: 'readonly',
         CSS: 'readonly',
+        WebSocket: 'readonly',
       },
     },
   },

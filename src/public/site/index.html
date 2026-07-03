@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telemetry</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚡ Telemetry</div>
+    <div class="topbar-right">
+      <span id="live" class="live off">○ off</span>
+      <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
+    </div>
+  </header>
+
+  <main id="app" class="container">
+    <h1>Public sites</h1>
+    <p id="err" class="err"></p>
+    <div id="sites" class="sites"></div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

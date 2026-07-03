@@ -1,30 +1,28 @@
 const { pool } = require('../db/pool');
 
-const KINDS = ['grid', 'solar', 'consumer', 'battery'];
-
 /**
  * Insert a single reading.
- * @param {object} r { siteId, kind, value, unit, recordedAt (Date|undefined) }
+ * @param {object} r { siteId, entityId, value, unit, recordedAt (Date|undefined) }
  */
-async function add({ siteId, kind, value, unit = 'W', recordedAt }) {
+async function add({ siteId, entityId, value, unit = 'W', recordedAt }) {
   const [result] = await pool.query(
-    `INSERT INTO energy_readings (site_id, kind, value, unit, recorded_at)
+    `INSERT INTO readings (site_id, entity_id, value, unit, recorded_at)
      VALUES (?, ?, ?, ?, ?)`,
-    [siteId, kind, value, unit, recordedAt ? new Date(recordedAt) : new Date()]
+    [siteId, entityId, value, unit, recordedAt ? new Date(recordedAt) : new Date()]
   );
   return result.insertId;
 }
 
 /**
  * Bulk insert many readings.
- * @param {Array} readings array of { siteId, kind, value, unit, recordedAt }
+ * @param {Array} readings array of { siteId, entityId, value, unit, recordedAt }
  */
 async function addMany(readings) {
   if (!readings.length) return 0;
   const now = new Date();
   const values = readings.map((r) => [
     r.siteId,
-    r.kind,
+    r.entityId,
     r.value,
     r.unit || 'W',
     r.recordedAt ? new Date(r.recordedAt) : now,
@@ -32,7 +30,7 @@ async function addMany(readings) {
   const placeholders = readings.map(() => '(?, ?, ?, ?, ?)').join(', ');
   const flat = values.flat();
   const [result] = await pool.query(
-    `INSERT INTO energy_readings (site_id, kind, value, unit, recorded_at) VALUES ${placeholders}`,
+    `INSERT INTO readings (site_id, entity_id, value, unit, recorded_at) VALUES ${placeholders}`,
     flat
   );
   return result.affectedRows;
@@ -41,36 +39,36 @@ async function addMany(readings) {
 /**
  * Get readings for a site within a window (default last 24h).
  */
-async function getForSite(siteId, { sinceMs, untilMs, kind } = {}) {
+async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
   const until = untilMs ? new Date(untilMs) : new Date();
   const since = sinceMs ? new Date(sinceMs) : new Date(Date.now() - 24 * 3600 * 1000);
   const params = [siteId, since, until];
-  let kindClause = '';
-  if (kind) {
-    kindClause = ' AND kind = ?';
-    params.push(kind);
+  let entityClause = '';
+  if (entityId) {
+    entityClause = ' AND entity_id = ?';
+    params.push(entityId);
   }
   const [rows] = await pool.query(
-    `SELECT id, site_id, kind, value, unit, recorded_at
-     FROM energy_readings
-     WHERE site_id = ? AND recorded_at >= ? AND recorded_at <= ?${kindClause}
-     ORDER BY recorded_at ASC, kind ASC`,
+    `SELECT id, site_id, entity_id, value, unit, recorded_at
+     FROM readings
+     WHERE site_id = ? AND recorded_at >= ? AND recorded_at <= ?${entityClause}
+     ORDER BY recorded_at ASC, entity_id ASC`,
     params
   );
   return rows;
 }
 
 /**
- * Latest reading per kind for a site.
+ * Latest reading per entity for a site.
  */
-async function latestPerKind(siteId) {
+async function latestPerEntity(siteId) {
   const [rows] = await pool.query(
-    `SELECT r.id, r.site_id, r.kind, r.value, r.unit, r.recorded_at
-     FROM energy_readings r
+    `SELECT r.id, r.site_id, r.entity_id, r.value, r.unit, r.recorded_at
+     FROM readings r
      INNER JOIN (
-       SELECT kind, MAX(recorded_at) AS max_ts
-       FROM energy_readings WHERE site_id = ? GROUP BY kind
-     ) m ON m.kind = r.kind AND m.max_ts = r.recorded_at
+       SELECT entity_id, MAX(recorded_at) AS max_ts
+       FROM readings WHERE site_id = ? GROUP BY entity_id
+     ) m ON m.entity_id = r.entity_id AND m.max_ts = r.recorded_at
      WHERE r.site_id = ?`,
     [siteId, siteId]
   );
@@ -79,7 +77,7 @@ async function latestPerKind(siteId) {
 
 async function deleteOlderThan(hours) {
   const cutoff = new Date(Date.now() - hours * 3600 * 1000);
-  const [result] = await pool.query('DELETE FROM energy_readings WHERE recorded_at < ?', [cutoff]);
+  const [result] = await pool.query('DELETE FROM readings WHERE recorded_at < ?', [cutoff]);
   return result.affectedRows;
 }
 
@@ -88,11 +86,11 @@ function sanitize(r) {
   return {
     id: r.id,
     siteId: r.site_id,
-    kind: r.kind,
+    entityId: r.entity_id,
     value: Number(r.value),
     unit: r.unit,
     recordedAt: r.recorded_at,
   };
 }
 
-module.exports = { KINDS, add, addMany, getForSite, latestPerKind, deleteOlderThan, sanitize };
+module.exports = { add, addMany, getForSite, latestPerEntity, deleteOlderThan, sanitize };

@@ -3,8 +3,12 @@
 const API = '/api';
 const TOKEN_KEY = 'np_token';
 
-const KINDS = ['grid', 'solar', 'consumer', 'battery'];
-const KIND_COLORS = { grid: '#e0556b', solar: '#e0a855', consumer: '#4f8cff', battery: '#4caf74' };
+const PALETTE = ['#e0556b', '#e0a855', '#4f8cff', '#4caf74', '#a855e0', '#55c2e0', '#e08555', '#8cff4f'];
+function colorFor(label) {
+  let h = 0;
+  for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+}
 
 const state = { user: null, token: null, sites: [], users: [], current: null, entities: [] };
 
@@ -231,6 +235,7 @@ async function openSite(siteId) {
     state.current = data.site;
     const ents = await api(`/sites/${siteId}/entities`);
     state.entities = ents.entities;
+    populateEntityFilter();
     renderDetail();
     await loadLatest();
     await loadReadings();
@@ -263,16 +268,33 @@ function renderDetail() {
 function renderEntityRows() {
   const root = $('#entityRows');
   root.innerHTML = '';
-  for (const kind of KINDS) {
-    const existing = state.entities.find((e) => e.kind === kind);
+  $('#entitiesEmpty').classList.toggle('hidden', state.entities.length > 0);
+  for (const e of state.entities) {
     const row = el('div', { class: 'entity-row' },
-      el('div', { class: 'kind', text: kind }),
-      el('input', { type: 'text', name: `entityId-${kind}`, placeholder: 'sensor.x', value: existing ? existing.entityId : '' }),
-      el('input', { type: 'text', name: `name-${kind}`, placeholder: 'display name', value: existing ? (existing.name || '') : '' }),
-      el('input', { type: 'text', name: `unit-${kind}`, placeholder: 'W', value: existing ? (existing.unit || '') : '' }),
+      el('div', { class: 'kind', text: e.entityId, title: e.entityId }),
+      el('input', { type: 'text', name: `name-${e.entityId}`, placeholder: 'display name', value: e.name || '' }),
+      el('input', { type: 'text', name: `unit-${e.entityId}`, placeholder: 'W', value: e.unit || '' }),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-del', text: 'Remove', onclick: () => removeEntity(e.entityId) })
     );
+    row.dataset.entityId = e.entityId;
     root.appendChild(row);
   }
+}
+
+async function removeEntity(entityId) {
+  try {
+    await api(`/sites/${state.current.id}/entities`, { method: 'DELETE', body: { entityId } });
+    state.entities = state.entities.filter((e) => e.entityId !== entityId);
+    renderEntityRows();
+  } catch (err) { alert(err.message); }
+}
+
+function addEntityRow(entityId) {
+  if (state.entities.some((e) => e.entityId === entityId)) return;
+  state.entities.push({ entityId, name: null, unit: '' });
+  renderEntityRows();
+  const inp = $(`#entityRows [data-entity-id="${CSS.escape(entityId)}"] input[name^=name-]`);
+  if (inp) inp.focus();
 }
 
 function bindDetail() {
@@ -320,14 +342,13 @@ function bindDetail() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const entities = [];
-    for (const kind of KINDS) {
-      const entityId = (fd.get(`entityId-${kind}`) || '').trim();
-      if (!entityId) continue;
+    for (const ent of state.entities) {
+      const name = (fd.get(`name-${ent.entityId}`) || '').trim();
+      const unit = (fd.get(`unit-${ent.entityId}`) || '').trim();
       entities.push({
-        kind,
-        entityId,
-        name: (fd.get(`name-${kind}`) || '').trim() || undefined,
-        unit: (fd.get(`unit-${kind}`) || '').trim() || undefined,
+        entityId: ent.entityId,
+        name: name || undefined,
+        unit: unit || undefined,
       });
     }
     setErr($('#entitiesMsg'), null);
@@ -335,6 +356,7 @@ function bindDetail() {
       const data = await api(`/sites/${state.current.id}/entities`, { method: 'PUT', body: { entities } });
       state.entities = data.entities;
       renderEntityRows();
+      populateEntityFilter();
       $('#entitiesMsg').textContent = 'Saved.';
       $('#entitiesMsg').className = 'hint';
       setTimeout(() => { $('#entitiesMsg').textContent = ''; }, 2000);
@@ -344,8 +366,25 @@ function bindDetail() {
     }
   });
 
+  $('#addEntityBtn').addEventListener('click', () => {
+    const inp = $('#newEntityId');
+    const entityId = (inp.value || '').trim();
+    if (!entityId) { inp.focus(); return; }
+    addEntityRow(entityId);
+    inp.value = '';
+  });
+
   $('#refreshReadings').addEventListener('click', () => { loadLatest(); loadReadings(); });
-  $('#kindFilter').addEventListener('change', () => loadReadings());
+  $('#entityFilter').addEventListener('change', () => loadReadings());
+}
+
+function populateEntityFilter() {
+  const sel = $('#entityFilter');
+  sel.innerHTML = '';
+  sel.appendChild(el('option', { value: '', text: 'all' }));
+  for (const e of state.entities) {
+    sel.appendChild(el('option', { value: e.entityId, text: e.name || e.entityId }));
+  }
 }
 
 async function loadLatest() {
@@ -358,8 +397,10 @@ async function loadLatest() {
       return;
     }
     for (const r of data.latest) {
+      const ent = state.entities.find((e) => e.entityId === r.entityId);
+      const label = (ent && ent.name) || r.entityId;
       root.appendChild(el('div', { class: 'latest-tile' },
-        el('div', { class: 'k', text: r.kind }),
+        el('div', { class: 'k', text: label, title: r.entityId }),
         el('div', { class: 'v', text: String(r.value) }),
         el('div', { class: 'u', text: r.unit || '' }),
         el('div', { class: 't', text: new Date(r.recordedAt || r.ts || Date.now()).toLocaleString() }),
@@ -371,10 +412,10 @@ async function loadLatest() {
 }
 
 async function loadReadings() {
-  const kind = $('#kindFilter').value;
+  const entityId = $('#entityFilter').value;
   const msg = $('#readingsMsg');
   try {
-    const data = await api(`/public/sites/${state.current.slug}/readings` + (kind ? `?kind=${kind}` : ''));
+    const data = await api(`/public/sites/${state.current.slug}/readings` + (entityId ? `?entityId=${encodeURIComponent(entityId)}` : ''));
     drawChart(data.readings || []);
     msg.textContent = `${(data.readings || []).length} points`;
   } catch (err) {
@@ -405,12 +446,13 @@ function drawChart(readings) {
 
   const grouped = {};
   for (const r of readings) {
-    if (!grouped[r.kind]) grouped[r.kind] = [];
-    grouped[r.kind].push({ ts: new Date(r.recordedAt || r.ts).getTime(), v: Number(r.value) });
+    const key = r.entityId;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({ ts: new Date(r.recordedAt || r.ts).getTime(), v: Number(r.value) });
   }
-  const kinds = Object.keys(grouped);
+  const keys = Object.keys(grouped);
   let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
-  for (const k of kinds) for (const p of grouped[k]) {
+  for (const k of keys) for (const p of grouped[k]) {
     if (p.ts < tMin) tMin = p.ts;
     if (p.ts > tMax) tMax = p.ts;
     if (p.v < vMin) vMin = p.v;
@@ -452,9 +494,9 @@ function drawChart(readings) {
   }
 
   // series
-  for (const k of kinds) {
+  for (const k of keys) {
     const pts = grouped[k].sort((a, b) => a.ts - b.ts);
-    ctx.strokeStyle = KIND_COLORS[k] || '#fff';
+    ctx.strokeStyle = colorFor(k);
     ctx.lineWidth = 2 * window.devicePixelRatio;
     ctx.beginPath();
     pts.forEach((p, i) => {
@@ -467,12 +509,14 @@ function drawChart(readings) {
   // legend
   ctx.textAlign = 'left';
   let lx = pad.l + 8;
-  for (const k of kinds) {
-    ctx.fillStyle = KIND_COLORS[k] || '#fff';
+  for (const k of keys) {
+    const ent = state.entities.find((e) => e.entityId === k);
+    const label = (ent && ent.name) || k;
+    ctx.fillStyle = colorFor(k);
     ctx.fillRect(lx, pad.t + 2, 12 * window.devicePixelRatio, 12 * window.devicePixelRatio);
     ctx.fillStyle = '#e6e9ef';
-    ctx.fillText(k, lx + 16 * window.devicePixelRatio, pad.t + 12 * window.devicePixelRatio);
-    lx += 80 * window.devicePixelRatio;
+    ctx.fillText(label, lx + 16 * window.devicePixelRatio, pad.t + 12 * window.devicePixelRatio);
+    lx += (16 + ctx.measureText(label).width + 24) * window.devicePixelRatio;
   }
 }
 

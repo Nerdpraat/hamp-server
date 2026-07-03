@@ -2,11 +2,10 @@ const z = require('zod');
 const logger = require('../utils/logger');
 const Site = require('../models/site');
 const Reading = require('../models/reading');
-
-const KINDS = ['grid', 'solar', 'consumer', 'battery'];
+const Entity = require('../models/entity');
 
 const readingSchema = z.object({
-  kind: z.enum(KINDS),
+  entityId: z.string().min(1).max(255),
   value: z.number().finite(),
   unit: z.string().max(16).optional(),
   ts: z.union([z.number(), z.string()]).optional(),
@@ -21,7 +20,7 @@ const messageSchema = z.object({
 function normalize(r, siteId) {
   return {
     siteId,
-    kind: r.kind,
+    entityId: r.entityId,
     value: r.value,
     unit: r.unit || 'W',
     recordedAt: r.ts,
@@ -114,6 +113,10 @@ function attach(io) {
           if (ack) ack({ ok: false, error: 'invalid payload', details: parsed.error?.flatten() });
           return;
         }
+        await Entity.ensure(site.id, {
+          entityId: parsed.data.reading.entityId,
+          unit: parsed.data.reading.unit,
+        });
         await Reading.add(normalize(parsed.data.reading, site.id));
         // Broadcast to public listeners (dashboard) on the site room, minus the sender.
         socket.to(`site:${site.id}`).emit('reading', {
@@ -139,6 +142,13 @@ function attach(io) {
           return;
         }
         const rows = parsed.data.readings.map((r) => normalize(r, site.id));
+        // Auto-populate any new entities (deduped) before storing readings.
+        const seen = new Set();
+        for (const r of parsed.data.readings) {
+          if (seen.has(r.entityId)) continue;
+          seen.add(r.entityId);
+          await Entity.ensure(site.id, { entityId: r.entityId, unit: r.unit });
+        }
         const affected = await Reading.addMany(rows);
         if (ack) ack({ ok: true, stored: affected });
       } catch (err) {

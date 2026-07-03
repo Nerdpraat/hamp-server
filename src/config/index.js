@@ -10,6 +10,20 @@ function required(key, fallback) {
   return v;
 }
 
+/**
+ * Parse TRUST_PROXY into a value Express accepts for `trust proxy`.
+ * Accepts: "1"/"true" -> 1, "0"/"false" -> false, a number, or a comma list.
+ * Defaults to 1 (behind a reverse proxy) when unset or empty.
+ */
+function parseTrustProxy(raw) {
+  if (raw === undefined || raw === '') return 1;
+  const v = raw.trim().toLowerCase();
+  if (v === 'true' || v === '1') return 1;
+  if (v === 'false' || v === '0') return false;
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  return raw.trim();
+}
+
 const corsOrigins = (process.env.CORS_ORIGINS || '*')
   .split(',')
   .map((s) => s.trim())
@@ -39,5 +53,5 @@ module.exports = {
   // Number of proxies between client and server (LiteSpeed / nginx / load
   // balancer). Used for Express `trust proxy` so req.ip + X-Forwarded-For are
   // honored (required by express-rate-limit and morgan remote-addr).
-  trustProxy: process.env.TRUST_PROXY === undefined ? 1 : process.env.TRUST_PROXY,
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 };

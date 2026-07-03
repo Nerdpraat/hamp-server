@@ -93,9 +93,14 @@
 
       <div class="card">
         <h3>Entities (Home Assistant mappings)</h3>
-        <p class="hint">Map each <code>kind</code> to a Home Assistant <code>entity_id</code>. Max 4.</p>
+        <p class="hint">Entities are auto-populated when a Home Assistant instance sends data. Override the display <code>name</code> below.</p>
         <form id="entitiesForm" class="entities">
           <div id="entityRows"></div>
+          <p id="entitiesEmpty" class="hint">No entities yet — they appear here once data is received.</p>
+          <div class="row">
+            <input type="text" id="newEntityId" placeholder="sensor.new_entity_id" />
+            <button class="btn btn-ghost" type="button" id="addEntityBtn">+ Add entity</button>
+          </div>
           <button class="btn" type="submit">Save entities</button>
           <p id="entitiesMsg" class="err"></p>
         </form>
@@ -109,14 +114,8 @@
       <div class="card">
         <h3>Readings (last 24h)</h3>
         <div class="row">
-          <label>Kind
-            <select id="kindFilter">
-              <option value="">all</option>
-              <option value="grid">grid</option>
-              <option value="solar">solar</option>
-              <option value="consumer">consumer</option>
-              <option value="battery">battery</option>
-            </select>
+          <label>Entity
+            <select id="entityFilter"></select>
           </label>
           <button class="btn btn-ghost" id="refreshReadings">Refresh</button>
         </div>

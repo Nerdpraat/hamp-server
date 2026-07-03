@@ -1,31 +1,46 @@
 const { pool } = require('../db/pool');
 
-const KINDS = ['grid', 'solar', 'consumer', 'battery'];
-
 async function listForSite(siteId) {
   const [rows] = await pool.query(
-    'SELECT * FROM site_entities WHERE site_id = ? ORDER BY kind',
+    'SELECT * FROM site_entities WHERE site_id = ? ORDER BY entity_id',
     [siteId]
   );
   return rows;
 }
 
-async function upsert(siteId, { kind, entityId, name, unit }) {
-  await pool.query(
-    `INSERT INTO site_entities (site_id, kind, entity_id, name, unit)
-     VALUES (?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE entity_id = VALUES(entity_id), name = VALUES(name), unit = VALUES(unit)`,
-    [siteId, kind, entityId, name || null, unit || 'W']
-  );
-  return findByKind(siteId, kind);
-}
-
-async function findByKind(siteId, kind) {
+async function findByEntityId(siteId, entityId) {
   const [rows] = await pool.query(
-    'SELECT * FROM site_entities WHERE site_id = ? AND kind = ? LIMIT 1',
-    [siteId, kind]
+    'SELECT * FROM site_entities WHERE site_id = ? AND entity_id = ? LIMIT 1',
+    [siteId, entityId]
   );
   return rows[0] || null;
+}
+
+/**
+ * Upsert an entity config from the admin panel. Updates name/unit only.
+ */
+async function upsert(siteId, { entityId, name, unit }) {
+  await pool.query(
+    `INSERT INTO site_entities (site_id, entity_id, name, unit)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE name = VALUES(name), unit = VALUES(unit)`,
+    [siteId, entityId, name || null, unit || 'W']
+  );
+  return findByEntityId(siteId, entityId);
+}
+
+/**
+ * Auto-populate an entity row on first ingest. INSERT IGNORE preserves any
+ * admin name/unit override for an existing entity.
+ */
+async function ensure(siteId, { entityId, unit = 'W' }) {
+  if (!entityId) return null;
+  await pool.query(
+    `INSERT IGNORE INTO site_entities (site_id, entity_id, name, unit)
+     VALUES (?, ?, NULL, ?)`,
+    [siteId, entityId, unit || 'W']
+  );
+  return findByEntityId(siteId, entityId);
 }
 
 async function removeForSite(siteId) {
@@ -37,7 +52,6 @@ function sanitize(entity) {
   return {
     id: entity.id,
     siteId: entity.site_id,
-    kind: entity.kind,
     entityId: entity.entity_id,
     name: entity.name,
     unit: entity.unit,
@@ -45,4 +59,4 @@ function sanitize(entity) {
   };
 }
 
-module.exports = { KINDS, listForSite, upsert, findByKind, removeForSite, sanitize };
+module.exports = { listForSite, findByEntityId, upsert, ensure, removeForSite, sanitize };

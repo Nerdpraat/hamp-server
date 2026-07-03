@@ -3,6 +3,7 @@ const z = require('zod');
 
 const Site = require('../models/site');
 const Entity = require('../models/entity');
+const { pool } = require('../db/pool');
 const { authRequired } = require('../auth/middleware');
 const { loadSite, requireSiteAccess } = require('../middleware/site');
 
@@ -22,14 +23,13 @@ const updateSiteSchema = z.object({
 });
 
 const entitySchema = z.object({
-  kind: z.enum(['grid', 'solar', 'consumer', 'battery']),
   entityId: z.string().min(1).max(255),
   name: z.string().max(160).optional(),
   unit: z.string().max(16).optional(),
 });
 
 const batchEntitiesSchema = z.object({
-  entities: z.array(entitySchema).max(4),
+  entities: z.array(entitySchema).max(500),
 });
 
 // List sites visible to the user.
@@ -120,13 +120,13 @@ router.put('/:siteId/entities', authRequired, loadSite, requireSiteAccess, async
   }
 });
 
-router.get('/:siteId/entities/:kind', authRequired, loadSite, requireSiteAccess, async (req, res, next) => {
+// Delete an entity (and its readings stay historical). Body: { entityId }.
+router.delete('/:siteId/entities', authRequired, loadSite, requireSiteAccess, async (req, res, next) => {
   try {
-    if (!Entity.KINDS.includes(req.params.kind)) {
-      return res.status(400).json({ error: 'Invalid kind' });
-    }
-    const entity = await Entity.findByKind(req.site.id, req.params.kind);
-    res.json({ entity: Entity.sanitize(entity) });
+    const entityId = String(req.body?.entityId || req.query.entityId || '').trim();
+    if (!entityId) return res.status(400).json({ error: 'entityId required' });
+    await pool.query('DELETE FROM site_entities WHERE site_id = ? AND entity_id = ?', [req.site.id, entityId]);
+    res.json({ deleted: true });
   } catch (err) {
     next(err);
   }

@@ -14,6 +14,10 @@ const loginLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  // The app already configures `trust proxy` explicitly (see config/index.js);
+  // disable the limiter's own strict checks that would otherwise throw when
+  // running behind a proxy that sets X-Forwarded-For.
+  validate: { trustProxy: false, xForwardedForHeader: false },
 });
 
 const registerSchema = z.object({

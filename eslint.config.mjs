@@ -37,6 +37,7 @@ export default [
         FormData: 'readonly',
         alert: 'readonly',
         confirm: 'readonly',
+        CSS: 'readonly',
       },
     },
   },

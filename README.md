@@ -111,7 +111,7 @@ Handshake auth: `{ subscribe: "<slugOrId>" }`. Public sites only. Receives the
 - `users` — id, email, password_hash, name, role(admin|user)
 - `sites` — id, name, slug, owner_id, api_key, is_public
 - `site_entities` — maps a HA `entity_id` to a `kind` per site (one per kind)
-- `energy_readings` — site_id, kind, value, unit, recorded_at (indexed; pruned)
+- `readings` — site_id, entity_id, value, unit, recorded_at (indexed; pruned)
 
 ## Admin dashboard
 

@@ -26,18 +26,18 @@ router.get('/sites/:slug/readings', resolvePublicSite, async (req, res, next) =>
   try {
     const sinceMs = req.query.since ? Number(req.query.since) : undefined;
     const untilMs = req.query.until ? Number(req.query.until) : undefined;
-    const kind = req.query.kind && Reading.KINDS.includes(req.query.kind) ? req.query.kind : undefined;
-    const rows = await Reading.getForSite(req.site.id, { sinceMs, untilMs, kind });
+    const entityId = req.query.entityId ? String(req.query.entityId) : undefined;
+    const rows = await Reading.getForSite(req.site.id, { sinceMs, untilMs, entityId });
     res.json({ site: Site.publicView(req.site), readings: rows.map(Reading.sanitize) });
   } catch (err) {
     next(err);
   }
 });
 
-// Latest value per kind.
+// Latest value per entity.
 router.get('/sites/:slug/latest', resolvePublicSite, async (req, res, next) => {
   try {
-    const rows = await Reading.latestPerKind(req.site.id);
+    const rows = await Reading.latestPerEntity(req.site.id);
     res.json({ site: Site.publicView(req.site), latest: rows.map(Reading.sanitize) });
   } catch (err) {
     next(err);

@@ -10,14 +10,14 @@ Notes for AI agents working in this repo.
 - `npm run typecheck` — no-op (plain JS, no TS)
 
 ## Architecture
-- `src/server.js` — express app + http server + socket.io + cleanup job bootstrap
+- `src/server.js` — express app + http server + raw WebSocket + cleanup job bootstrap
 - `src/config/index.js` — env loading
 - `src/db/` — `pool.js` (mysql2 pool), `schema.sql`, `migrate.js`
 - `src/auth/` — `password.js` (bcrypt), `jwt.js`, `middleware.js` (authRequired/adminRequired)
 - `src/middleware/site.js` — loadSite, requireSiteAccess, resolvePublicSite, withTransaction
 - `src/models/` — user, site, entity, reading (plain functions over pool)
 - `src/routes/` — `auth.js`, `sites.js` (auth, CRUD, entity config), `public.js` (public read)
-- `src/ws/socket.js` — socket.io auth (owner api_key OR public subscribe) + ingest
+- `src/ws/raw.js` — raw WebSocket (RFC 6455) auth + ingest
 - `src/jobs/cleanup.js` — periodic retention delete
 
 ## Conventions

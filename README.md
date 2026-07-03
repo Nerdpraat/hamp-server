@@ -12,7 +12,6 @@ dashboard can override their display `name` and `unit`.
 ## Stack
 
 - **Express** REST API (JWT auth for users, per-site API keys for ingestion)
-- **Socket.io** at `/` for HA ingestion + live public subscriptions
 - **Raw WebSocket** at `/ws` for plain WS clients (RFC 6455)
 - **MySQL/MariaDB** via `mysql2`
 - Periodic **cleanup cron** enforcing retention
@@ -116,10 +115,7 @@ per entity (deduped by primary key, so tied timestamps don't duplicate).
 
 ## WebSocket ingestion
 
-There are **two** WebSocket endpoints. Both accept the same payload shape and
-use the same site API key; pick whichever your client supports.
-
-### Payload shape (both endpoints)
+Connect to the raw WebSocket (RFC 6455) endpoint and send JSON messages:
 
 ```jsonc
 // single reading
@@ -139,14 +135,12 @@ use the same site API key; pick whichever your client supports.
 ]}
 ```
 
-On success the server replies with an acknowledgement:
-- Socket.io: callback `ack({ ok: true })` or `ack({ ok: true, stored: N })`
-- Raw WS: `{"type":"ack","ok":true}` or `{"type":"ack","ok":true,"stored":N}`
+On success the server replies with `{"type":"ack","ok":true}` or
+`{"type":"ack","ok":true,"stored":N}`. Errors come back as
+`{"type":"error",...}`. Unknown/new entities are auto-registered on first
+ingest.
 
-Errors come back as `{ ok:false, error, details? }` / `{"type":"error",...}`.
-Unknown/new entities are auto-registered on first ingest.
-
-### 1. Raw WebSocket — `/ws` (RFC 6455)
+### Raw WebSocket — `/ws` (RFC 6455)
 
 For plain WS clients (Postman "WebSocket", `wscat`, browser `WebSocket`,
 microcontroller clients). Connect to:
@@ -168,42 +162,6 @@ Unauthenticated sockets are closed with code `4001`.
 wscat -c "ws://localhost:3000/ws?api_key=np_dc99090c424d0abf221c3023c101666d91b2df9bea6c90e7"
 # then type:
 {"type":"reading","reading":{"entityId":"sensor.power_grid","value":1842.5,"unit":"W"}}
-```
-
-### 2. Socket.io — `/`
-
-For clients using the Socket.io protocol (the admin dashboard, a Node
-integration using `socket.io-client`). Connect to:
-
-```
-http://<host>:<port>
-```
-
-Handshake auth (owner, write access): `{ token: "<site apiKey>" }` (also
-accepts `apiKey`, query `?api_key=`, or header `x-api-key`).
-
-Events emitted by the client:
-- `reading` `{entityId, value, unit?, ts?}` → ack `{ok}`
-- `readings` `[{entityId, value, unit?, ts?}, ...]` (max 500) → ack `{ok, stored}`
-
-Server emits:
-- `ready` `{siteId, slug, name, readOnly}`
-- `reading` (broadcast to other sockets in the site room — for dashboards)
-
-#### Public subscriber (read only)
-Handshake auth: `{ subscribe: "<slugOrId>" }`. Public sites only. Receives the
-`ready` and live `reading` broadcasts but cannot ingest.
-
-Node example:
-```js
-const { io } = require('socket.io-client');
-const socket = io('http://localhost:3000', {
-  auth: { token: 'np_dc99090c424d0abf221c3023c101666d91b2df9bea6c90e7' },
-});
-socket.on('ready', (info) => console.log('ready', info));
-socket.on('connect_error', (err) => console.log('conn error:', err.message));
-socket.emit('reading', { entityId: 'sensor.power_grid', value: 123.4, unit: 'W' },
-  (ack) => console.log(ack));
 ```
 
 ## Data model

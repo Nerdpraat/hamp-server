@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const { Server } = require('socket.io');
 
 const path = require('path');
 const config = require('./config');
@@ -13,7 +12,6 @@ const authRoutes = require('./routes/auth');
 const siteRoutes = require('./routes/sites');
 const publicRoutes = require('./routes/public');
 const userRoutes = require('./routes/users');
-const { attach } = require('./ws/socket');
 const { attachRawWs } = require('./ws/raw');
 const cleanup = require('./jobs/cleanup');
 
@@ -86,15 +84,6 @@ async function start() {
 
   const app = buildApp();
   const server = http.createServer(app);
-  const io = new Server(server, {
-    cors: {
-      origin: config.cors.origins.includes('*') ? true : config.cors.origins,
-      credentials: true,
-    },
-    maxHttpBufferSize: 1e6,
-  });
-  attach(io);
-  app.set('io', io);
 
   // Raw WebSocket (RFC 6455) endpoint for plain WS clients, on /ws.
   const rawWss = attachRawWs(server, '/ws');
@@ -109,7 +98,6 @@ async function start() {
   const shutdown = (sig) => {
     logger.info('shutdown signal received', { signal: sig });
     cleanup.stop();
-    io.close();
     rawWss.close();
     server.close(() => pool.end().then(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10000).unref();
@@ -117,7 +105,7 @@ async function start() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  return { app, server, io };
+  return { app, server };
 }
 
 // Always boot when this module is loaded. Under LiteSpeed lsnode the entry

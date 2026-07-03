@@ -3,29 +3,13 @@ const logger = require('../utils/logger');
 const Site = require('../models/site');
 const Reading = require('../models/reading');
 const Entity = require('../models/entity');
-
-const readingSchema = z.object({
-  entityId: z.string().min(1).max(255),
-  value: z.number().finite(),
-  unit: z.string().max(16).optional(),
-  ts: z.union([z.number(), z.string()]).optional(),
-});
+const { readingSchema, normalize } = require('./shared');
 
 const messageSchema = z.object({
   type: z.enum(['reading', 'readings']),
   reading: readingSchema.optional(),
   readings: z.array(readingSchema).max(500).optional(),
 });
-
-function normalize(r, siteId) {
-  return {
-    siteId,
-    entityId: r.entityId,
-    value: r.value,
-    unit: r.unit || 'W',
-    recordedAt: r.ts,
-  };
-}
 
 async function authenticateOwner(socket, token) {
   if (!token || typeof token !== 'string') {

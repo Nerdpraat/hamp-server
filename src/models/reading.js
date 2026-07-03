@@ -59,17 +59,20 @@ async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
 }
 
 /**
- * Latest reading per entity for a site.
+ * Latest reading per entity for a site. Dedupes by primary key id so that
+ * multiple readings sharing the same recorded_at timestamp do not produce
+ * duplicate rows.
  */
 async function latestPerEntity(siteId) {
   const [rows] = await pool.query(
     `SELECT r.id, r.site_id, r.entity_id, r.value, r.unit, r.recorded_at
      FROM readings r
      INNER JOIN (
-       SELECT entity_id, MAX(recorded_at) AS max_ts
+       SELECT entity_id, MAX(id) AS max_id
        FROM readings WHERE site_id = ? GROUP BY entity_id
-     ) m ON m.entity_id = r.entity_id AND m.max_ts = r.recorded_at
-     WHERE r.site_id = ?`,
+     ) m ON m.max_id = r.id
+     WHERE r.site_id = ?
+     ORDER BY r.entity_id`,
     [siteId, siteId]
   );
   return rows;

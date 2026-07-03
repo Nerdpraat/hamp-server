@@ -14,6 +14,7 @@ const siteRoutes = require('./routes/sites');
 const publicRoutes = require('./routes/public');
 const userRoutes = require('./routes/users');
 const { attach } = require('./ws/socket');
+const { attachRawWs } = require('./ws/raw');
 const cleanup = require('./jobs/cleanup');
 
 // Ensure any startup/runtime crash is captured in the log file instead of
@@ -95,6 +96,10 @@ async function start() {
   attach(io);
   app.set('io', io);
 
+  // Raw WebSocket (RFC 6455) endpoint for plain WS clients, on /ws.
+  const rawWss = attachRawWs(server, '/ws');
+  app.set('rawWss', rawWss);
+
   cleanup.start();
 
   server.listen(config.port, () => {
@@ -105,6 +110,7 @@ async function start() {
     logger.info('shutdown signal received', { signal: sig });
     cleanup.stop();
     io.close();
+    rawWss.close();
     server.close(() => pool.end().then(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10000).unref();
   };

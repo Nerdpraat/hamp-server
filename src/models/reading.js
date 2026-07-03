@@ -53,12 +53,15 @@ async function addMany(readings) {
  * Get readings for a site within a window (default last 24h).
  */
 async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
-  const until = untilMs ? new Date(untilMs) : new Date();
   const since = sinceMs ? new Date(sinceMs) : new Date(Date.now() - 24 * 3600 * 1000);
-  const params = [siteId, since, until];
-  let entityClause = '';
+  const params = [siteId, since];
+  let where = 'site_id = ? AND recorded_at >= ?';
+  if (untilMs) {
+    where += ' AND recorded_at <= ?';
+    params.push(new Date(untilMs));
+  }
   if (entityId) {
-    entityClause = ' AND entity_id = ?';
+    where += ' AND r.entity_id = ?';
     params.push(entityId);
   }
   const [rows] = await pool.query(
@@ -67,7 +70,7 @@ async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
      FROM readings r
      LEFT JOIN site_entities e
        ON e.site_id = r.site_id AND e.entity_id = r.entity_id
-     WHERE r.site_id = ? AND r.recorded_at >= ? AND r.recorded_at <= ?${entityClause}
+     WHERE r.${where}
      ORDER BY r.recorded_at ASC, r.entity_id ASC`,
     params
   );

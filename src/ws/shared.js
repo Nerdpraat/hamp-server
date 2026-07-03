@@ -8,12 +8,17 @@ const readingSchema = z.object({
 });
 
 function normalize(r, siteId) {
+  let recordedAt;
+  if (r.ts !== undefined && r.ts !== null && r.ts !== '') {
+    const d = new Date(r.ts);
+    recordedAt = isNaN(d.getTime()) ? undefined : d;
+  }
   return {
     siteId,
     entityId: r.entityId,
     value: r.value,
     unit: r.unit || 'W',
-    recordedAt: r.ts,
+    recordedAt,
   };
 }
 

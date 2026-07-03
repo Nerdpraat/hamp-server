@@ -391,7 +391,7 @@ async function loadLatest() {
   const root = $('#latestGrid');
   root.innerHTML = '';
   try {
-    const data = await api(`/public/sites/${state.current.slug}/latest`);
+    const data = await api(`/sites/${state.current.id}/latest`);
     if (!data.latest || data.latest.length === 0) {
       root.appendChild(el('p', { class: 'hint' }, 'No readings yet.'));
       return;
@@ -415,7 +415,7 @@ async function loadReadings() {
   const entityId = $('#entityFilter').value;
   const msg = $('#readingsMsg');
   try {
-    const data = await api(`/public/sites/${state.current.slug}/readings` + (entityId ? `?entityId=${encodeURIComponent(entityId)}` : ''));
+    const data = await api(`/sites/${state.current.id}/readings` + (entityId ? `?entityId=${encodeURIComponent(entityId)}` : ''));
     drawChart(data.readings || []);
     msg.textContent = `${(data.readings || []).length} points`;
   } catch (err) {

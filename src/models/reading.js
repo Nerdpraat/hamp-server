@@ -1,4 +1,17 @@
+const crypto = require('crypto');
 const { pool } = require('../db/pool');
+
+/**
+ * Stable opaque id for an entity within a site, so the raw entity_id (which may
+ * contain HA device serial numbers) is never exposed via the public API.
+ */
+function publicId(siteId, entityId) {
+  return crypto
+    .createHash('sha256')
+    .update(`${siteId}:${entityId}`)
+    .digest('hex')
+    .slice(0, 16);
+}
 
 /**
  * Insert a single reading.
@@ -49,10 +62,13 @@ async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
     params.push(entityId);
   }
   const [rows] = await pool.query(
-    `SELECT id, site_id, entity_id, value, unit, recorded_at
-     FROM readings
-     WHERE site_id = ? AND recorded_at >= ? AND recorded_at <= ?${entityClause}
-     ORDER BY recorded_at ASC, entity_id ASC`,
+    `SELECT r.id, r.site_id, r.entity_id, r.value,
+            COALESCE(e.unit, r.unit) AS unit, e.name, r.recorded_at
+     FROM readings r
+     LEFT JOIN site_entities e
+       ON e.site_id = r.site_id AND e.entity_id = r.entity_id
+     WHERE r.site_id = ? AND r.recorded_at >= ? AND r.recorded_at <= ?${entityClause}
+     ORDER BY r.recorded_at ASC, r.entity_id ASC`,
     params
   );
   return rows;
@@ -65,12 +81,15 @@ async function getForSite(siteId, { sinceMs, untilMs, entityId } = {}) {
  */
 async function latestPerEntity(siteId) {
   const [rows] = await pool.query(
-    `SELECT r.id, r.site_id, r.entity_id, r.value, r.unit, r.recorded_at
+    `SELECT r.id, r.site_id, r.entity_id, r.value,
+            COALESCE(e.unit, r.unit) AS unit, e.name, r.recorded_at
      FROM readings r
      INNER JOIN (
        SELECT entity_id, MAX(id) AS max_id
        FROM readings WHERE site_id = ? GROUP BY entity_id
      ) m ON m.max_id = r.id
+     LEFT JOIN site_entities e
+       ON e.site_id = r.site_id AND e.entity_id = r.entity_id
      WHERE r.site_id = ?
      ORDER BY r.entity_id`,
     [siteId, siteId]
@@ -92,8 +111,24 @@ function sanitize(r) {
     entityId: r.entity_id,
     value: Number(r.value),
     unit: r.unit,
+    name: r.name,
     recordedAt: r.recorded_at,
   };
 }
 
-module.exports = { add, addMany, getForSite, latestPerEntity, deleteOlderThan, sanitize };
+/**
+ * Public-facing view: never reveals the raw entity_id (which may embed HA
+ * serial numbers). Exposes a stable hash of (siteId + entityId) as `id`.
+ */
+function publicView(r) {
+  if (!r) return null;
+  return {
+    id: publicId(r.site_id, r.entity_id),
+    value: Number(r.value),
+    unit: r.unit,
+    name: r.name,
+    recordedAt: r.recorded_at,
+  };
+}
+
+module.exports = { add, addMany, getForSite, latestPerEntity, deleteOlderThan, sanitize, publicView, publicId };

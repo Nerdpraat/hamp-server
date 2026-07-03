@@ -3,6 +3,7 @@ const z = require('zod');
 
 const Site = require('../models/site');
 const Entity = require('../models/entity');
+const Reading = require('../models/reading');
 const { pool } = require('../db/pool');
 const { authRequired } = require('../auth/middleware');
 const { loadSite, requireSiteAccess } = require('../middleware/site');
@@ -87,6 +88,29 @@ router.delete('/:siteId', authRequired, loadSite, requireSiteAccess, async (req,
   try {
     await Site.remove(req.site.id);
     res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- Readings (authenticated; exposes real entity_id for the admin panel) ---
+
+router.get('/:siteId/readings', authRequired, loadSite, requireSiteAccess, async (req, res, next) => {
+  try {
+    const sinceMs = req.query.since ? Number(req.query.since) : undefined;
+    const untilMs = req.query.until ? Number(req.query.until) : undefined;
+    const entityId = req.query.entityId ? String(req.query.entityId) : undefined;
+    const rows = await Reading.getForSite(req.site.id, { sinceMs, untilMs, entityId });
+    res.json({ site: Site.sanitize(req.site), readings: rows.map(Reading.sanitize) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:siteId/latest', authRequired, loadSite, requireSiteAccess, async (req, res, next) => {
+  try {
+    const rows = await Reading.latestPerEntity(req.site.id);
+    res.json({ site: Site.sanitize(req.site), latest: rows.map(Reading.sanitize) });
   } catch (err) {
     next(err);
   }

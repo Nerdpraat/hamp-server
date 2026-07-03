@@ -143,8 +143,8 @@ pre { background: var(--panel-2); padding: 12px; border-radius: 6px; overflow: a
 .meta code { background: var(--panel-2); }
 
 .entities { display: flex; flex-direction: column; gap: 10px; }
-.entity-row { display: grid; grid-template-columns: 100px 1fr 1fr 80px; gap: 8px; align-items: center; }
-.entity-row .kind { font-weight: 600; }
+.entity-row { display: grid; grid-template-columns: minmax(120px, max-content) 1fr 1fr 80px; gap: 8px; align-items: center; }
+.entity-row .kind { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
 .entity-row input, .entity-row select { padding: 6px 8px; }
 
 .latest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }

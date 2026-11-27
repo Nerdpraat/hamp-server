@@ -129,6 +129,18 @@ def test_generic_instances_are_flagged_for_the_devices_tab(authed):
     assert insts["bat"]["generic"] is False and insts["plug"]["generic"] is False
 
 
+def test_devices_shows_the_battery_capacity_as_a_fixed_sensor(authed):
+    db = authed.app.state.db
+
+    async def go():
+        await db.replace_config("home", [
+            inst("bat", "battery", "Battery", power=src("bp"), capacity={"fixed": 10})])
+    authed.portal.call(go)
+    bat = authed.get("/api/sites/home/devices").json()["instances"][0]
+    cap = {s["id"]: s for s in bat["sensors"]}["capacity"]
+    assert cap["fixed"] == 10 and cap["key"] is None and cap["unit"] == "kWh"
+
+
 def test_instances_removed_from_the_catalogue_are_skipped(authed):
     db = authed.app.state.db
 
@@ -362,10 +374,16 @@ def test_static_files_are_revalidated(client):
 
 
 # ---- overview ------------------------------------------------------------------------------------------------
-def _fake_model(*pairs):
-    """A stand-in for SiteModel: overview_for_site only reads `entities` with `key` and `role`."""
+def _fake_model(*pairs, capacity=None):
+    """A stand-in for SiteModel: overview_for_site reads `entities` (key, role, instance) and `fixed`.
+
+    The instance is the key's part before the dot; `capacity` maps instance -> fixed kWh.
+    """
     from types import SimpleNamespace
-    return SimpleNamespace(entities=[SimpleNamespace(key=k, role=r) for k, r in pairs])
+    ents = [SimpleNamespace(key=k, role=r, instance=k.split(".")[0]) for k, r in pairs]
+    fixed = [SimpleNamespace(instance=i, sensor=SimpleNamespace(role="battery_capacity"), value=v)
+             for i, v in (capacity or {}).items()]
+    return SimpleNamespace(entities=ents, fixed=fixed)
 
 
 def test_overview_helper_sums_and_averages():
@@ -379,7 +397,7 @@ def test_overview_helper_sums_and_averages():
     out = overview_for_site(model, values, now)
     assert out["grid"] == {"import_w": 500.0, "export_w": 120.0, "net_w": 380.0}
     assert out["solar"] == {"power_w": 500.0}
-    assert out["battery"] == {"power_w": -250.0, "soc": 50.0}
+    assert out["battery"] == {"power_w": -250.0, "soc": 50.0, "soc_n": 2, "stored_kwh": None}
 
 
 def test_overview_helper_drops_stale_and_missing():
@@ -389,8 +407,33 @@ def test_overview_helper_drops_stale_and_missing():
     values = {"m.pi": [now - ONLINE_WINDOW - 1, 500.0], "b.s": [now, 80.0]}   # grid stale, solar unseen
     out = overview_for_site(model, values, now)
     assert out["grid"] is None and out["solar"] is None
-    assert out["battery"] == {"power_w": None, "soc": 80.0}
+    assert out["battery"] == {"power_w": None, "soc": 80.0, "soc_n": 1, "stored_kwh": None}
     assert overview_for_site(_fake_model(), {}, now) == {"grid": None, "solar": None, "battery": None}
+
+
+def test_overview_stored_energy_from_soc_and_capacity():
+    from app.api import overview_for_site
+    out = overview_for_site(_fake_model(("b1.s", "battery_soc"), capacity={"b1": 10.0}), {"b1.s": [5.0, 62.0]}, 5.0)
+    assert out["battery"]["stored_kwh"] == pytest.approx(6.2)
+    assert out["battery"]["soc_n"] == 1
+
+
+def test_overview_stored_energy_skips_batteries_without_capacity():
+    from app.api import overview_for_site
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    out = overview_for_site(model, {"b1.s": [5.0, 40.0], "b2.s": [5.0, 80.0]}, 5.0)
+    assert out["battery"]["stored_kwh"] == pytest.approx(4.0)
+    assert out["battery"]["soc"] == pytest.approx(60.0) and out["battery"]["soc_n"] == 2
+
+
+def test_overview_stored_energy_ignores_stale_soc_and_none_without_capacity():
+    from app.api import ONLINE_WINDOW, overview_for_site
+    now = 10_000.0
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    out = overview_for_site(model, {"b1.s": [now - ONLINE_WINDOW - 1, 40.0], "b2.s": [now, 80.0]}, now)
+    assert out["battery"]["stored_kwh"] is None and out["battery"]["soc_n"] == 1
+    out = overview_for_site(_fake_model(("b2.s", "battery_soc")), {"b2.s": [now, 80.0]}, now)
+    assert out["battery"]["stored_kwh"] is None
 
 
 def test_overview_grid_with_import_only_has_zero_export():

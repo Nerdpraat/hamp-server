@@ -58,6 +58,9 @@ class FakeHub:
                 if "fixed" in entry and not sensors[sid]["allow_fixed"]:
                     return {"type": "error", "code": "invalid_config", "message": "no fixed value",
                             "path": f"instances[{i}].sensors.{sid}.fixed"}
+                if "source" in entry and sensors[sid].get("fixed_only"):
+                    return {"type": "error", "code": "invalid_config", "message": "fixed value only",
+                            "path": f"instances[{i}].sensors.{sid}.source"}
         return None
 
     async def _handler(self, request: web.Request) -> web.StreamResponse:

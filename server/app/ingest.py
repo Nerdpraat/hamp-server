@@ -118,6 +118,8 @@ def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
                 raise ConfigProblem(sp, "give either 'source' or 'fixed', not both")
             if not has_source and not has_fixed:
                 raise ConfigProblem(sp, "needs a 'source' (or a 'fixed' number for price slots)")
+            if has_source and sensor.fixed_only:
+                raise ConfigProblem(f"{sp}.source", f"sensor {sid!r} takes only a fixed value")
             if has_source:
                 src = entry["source"]
                 if not isinstance(src, str) or not 1 <= len(src) <= 255:
@@ -127,7 +129,10 @@ def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
                 if not sensor.allow_fixed:
                     raise ConfigProblem(f"{sp}.fixed", f"sensor {sid!r} does not accept a fixed value")
                 fixed = entry["fixed"]
-                if not _is_number(fixed) or fixed < 0:
+                if sensor.fixed_only:
+                    if not _is_number(fixed) or fixed <= 0:
+                        raise ConfigProblem(f"{sp}.fixed", "must be a number greater than 0")
+                elif not _is_number(fixed) or fixed < 0:
                     raise ConfigProblem(f"{sp}.fixed", "must be a number of 0 or more")
                 clean[sid] = {"fixed": float(fixed)}
         result.append({"id": iid, "device": device, "name": name, "sensors": clean})

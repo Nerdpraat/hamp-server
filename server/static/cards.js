@@ -1,8 +1,8 @@
 // Reusable dashboard cards. Each function appends a card to `parent` and returns it.
 import { barOption, colorFor, createChart, lineOption, PALETTE, TEXT } from './charts.js';
 import { renderDistribution } from './distribution.js';
-import { formatCost, formatPct, formatValue, prettyUnit } from './format.js';
-import { devicesDetail, netGridPower, sankeyData, sensorSummary, totalsRows } from './transform.js';
+import { formatCost, formatNumber, formatPct, formatValue, prettyUnit } from './format.js';
+import { devicesDetail, netGridPower, sankeyData, sensorSummary, storedSeries, totalsRows } from './transform.js';
 
 export function h(tag, props = {}, ...children) {
   const n = document.createElement(tag);
@@ -58,6 +58,16 @@ export function solarCard(parent, d) {
   const c = card(parent, 'Solar production', formatValue(d.summary.values.solar_energy, unitOf(d, 'solar_energy')));
   const list = ents.map((e) => ({ name: e.name, color: colorFor(e), stack: 'solar', data: d.arrays[e.key] || [] }));
   createChart(chartBox(c)).setOption(barOption(d.buckets, d.mode, list, unitOf(d, 'solar_energy')));
+  return c;
+}
+
+export function batteryStoredCard(parent, d) {
+  const series = storedSeries(d.instances, d.gauges);
+  if (!series.length) return null;
+  const c = card(parent, 'Battery stored energy');
+  const list = series.map((s, i) => ({ name: s.name, color: colorFor({}, i), area: true, data: s.data }));
+  createChart(chartBox(c)).setOption(
+    lineOption(list, 'kWh', (v) => `${formatNumber(v, 1)} kWh`, { min: d.range.start, max: d.range.end }));
   return c;
 }
 

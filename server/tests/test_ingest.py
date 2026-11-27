@@ -95,7 +95,7 @@ def test_hello_carries_version_limits_time_and_the_catalogue(client):
     assert hello["limits"] == ingest.LIMITS
     devices = {d["id"]: d for d in hello["devices"]}
     assert set(devices) == {"heatpump", "solar_inverter", "battery", "gasmeter", "watermeter",
-                            "electricitymeter", "consumer_device"}
+                            "electricitymeter", "consumer_device", "water_heater"}
     soc = next(s for s in devices["battery"]["sensors"] if s["id"] == "state_of_charge")
     assert (soc["kind"], soc["unit"], soc["allow_fixed"]) == ("gauge", "%", False)
     assert soc["selector"] == {"domain": ["sensor"], "device_class": ["battery"]}
@@ -121,6 +121,15 @@ def test_config_is_stored_and_acknowledged(client):
     sites = {s["id"]: s for s in client.app.state.db.__class__ and
              client.portal.call(client.app.state.db.list_sites)}
     assert sites["home"]["meta"] == {"currency": "EUR"}
+
+
+def test_battery_capacity_accepts_a_fixed_number(client):
+    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 10}}}
+    with opened(client) as c:
+        ack = c.call(config(battery))
+    assert ack["type"] == "ack" and ack["sensors"] == 4
+    fixed = db_rows(client, "SELECT instance, sensor_id, value FROM fixed_values")
+    assert fixed == [{"instance": "battery-1", "sensor_id": "capacity", "value": 10.0}]
 
 
 @pytest.mark.parametrize("bad,path,fragment", [
@@ -153,6 +162,12 @@ def test_config_is_stored_and_acknowledged(client):
      "instances[0].sensors.price_import.fixed", "0 or more"),
     ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"fixed": True}}}]},
      "instances[0].sensors.price_import.fixed", "0 or more"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"source": "sensor.x"}}}]},
+     "instances[0].sensors.capacity.source", "takes only a fixed value"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": 0}}}]},
+     "instances[0].sensors.capacity.fixed", "greater than 0"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": -5}}}]},
+     "instances[0].sensors.capacity.fixed", "greater than 0"),
 ])
 def test_invalid_config_is_rejected_with_a_path_and_the_connection_stays_open(client, bad, path, fragment):
     with opened(client) as c:

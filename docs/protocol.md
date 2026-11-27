@@ -84,7 +84,7 @@ client -> config           at any time: replaces the previous config
   means no conversion.
 * `selector`: a hint for building a picker. `domain` and `device_class` use Home Assistant's names.
   Other clients MAY ignore it.
-* `allow_fixed`: the slot may be given a constant number instead of a source (used for prices).
+* `allow_fixed`: the slot may be given a constant number instead of a source (prices, battery capacity).
 * `fixed_only` (optional, default `false`): the slot takes only a fixed number, never a source.
   Clients should show only a number field. A missing flag means `false`.
 * `server_time` (Unix seconds) lets a client notice clock skew.

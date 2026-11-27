@@ -3,7 +3,7 @@ import { api, liveSocketUrl } from '../api.js';
 import { h } from '../cards.js';
 import { colorFor, createChart, lineOption } from '../charts.js';
 import { formatNumber, formatPower } from '../format.js';
-import { unitClass } from '../transform.js';
+import { batteriesWithCapacity, storedEnergy, unitClass } from '../transform.js';
 
 export const needsDate = false;
 
@@ -18,9 +18,14 @@ function formatLive(entity, value) {
   return `${formatNumber(value, 2)}${entity.unit ? ' ' + entity.unit : ''}`;
 }
 
+function setStored(t, soc) {
+  const kwh = storedEnergy(soc, t.capacity);
+  if (kwh !== null) t.v.textContent = `${formatNumber(kwh, 1)} kWh`;
+}
+
 /** Returns a dispose function. */
 export async function renderNow(el, site, isStale) {
-  const { entities } = await api.devices(site);
+  const { entities, instances } = await api.devices(site);
   if (isStale()) return () => {};
   const gauges = entities.filter((e) => e.kind === 'gauge');
   if (!gauges.length) {
@@ -46,6 +51,15 @@ export async function renderNow(el, site, isStale) {
     tiles.append(h('div', { class: 'tile' }, h('div', { class: 'n', text: e.name }), v));
     const last = buffers[e.key].at(-1);
     if (last) v.textContent = formatLive(e, last[1]);
+  }
+  const storedTiles = [];
+  for (const b of batteriesWithCapacity(instances)) {
+    const v = h('div', { class: 'v', text: '–' });
+    tiles.append(h('div', { class: 'tile' }, h('div', { class: 'n', text: `${b.name} · Stored energy` }), v));
+    const t = { ...b, v };
+    storedTiles.push(t);
+    const last = buffers[b.socKey]?.at(-1);
+    if (last) setStored(t, last[1]);
   }
   el.append(tiles);
 
@@ -97,6 +111,7 @@ export async function renderNow(el, site, isStale) {
 
   const byKey = Object.fromEntries(gauges.map((e) => [e.key, e]));
   const apply = (values) => {
+    for (const t of storedTiles) if (values[t.socKey]) setStored(t, values[t.socKey][1]);
     for (const [key, [ts, value]] of Object.entries(values)) {
       const e = byKey[key];
       if (!e) continue;

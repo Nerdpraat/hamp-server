@@ -341,3 +341,61 @@ async def test_adding_a_device_needs_the_server(hass, energy_prefs, fake_forward
     with patch("custom_components.energy_hub.config_flow.fetch_hello", side_effect=AuthError("no")):
         result = await menu(hass, entry, "add_device")
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "cannot_connect"
+
+
+# ---- fixed-only slots (battery capacity) -----------------------------------------------------------------
+async def open_sensors(hass, entry, device, name):
+    result = await menu(hass, entry, "add_device")
+    return await hass.config_entries.options.async_configure(result["flow_id"], {"device": device, "name": name})
+
+
+async def test_a_fixed_only_slot_has_only_a_number_field_with_its_unit(hass, energy_prefs, fake_forwarder):
+    entry = await setup_entry(hass)
+    result = await open_sensors(hass, entry, "battery", "Home battery")
+    assert fields(result) == {"State of Charge", "Power", "Energy Charged", "Energy Discharged",
+                              "Capacity (fixed value)"}
+    schema = {str(k): v for k, v in result["data_schema"].schema.items()}
+    assert schema["Capacity (fixed value)"].config["unit_of_measurement"] == "kWh"
+    assert schema["Capacity (fixed value)"].config["min"] == 0
+
+
+async def test_price_slots_keep_both_fields(hass, energy_prefs, fake_forwarder):
+    entry = await setup_entry(hass)
+    result = await open_sensors(hass, entry, "electricitymeter", "Meter")
+    assert {"Import Price", "Import Price (fixed value)"} <= fields(result)
+    schema = {str(k): v for k, v in result["data_schema"].schema.items()}
+    assert "unit_of_measurement" not in schema["Import Price (fixed value)"].config
+
+
+async def test_a_catalogue_without_the_flag_behaves_as_before(hass, energy_prefs, fake_forwarder):
+    from custom_components.energy_hub.config_flow import sensor_schema
+    from catalogue import DEVICES
+    battery = next(d for d in DEVICES if d["id"] == "battery")
+    old = {**battery, "sensors": [{k: v for k, v in s.items() if k != "fixed_only"} for s in battery["sensors"]]}
+    assert {str(k) for k in sensor_schema(old)} == {
+        "State of Charge", "Power", "Energy Charged", "Energy Discharged", "Capacity",
+        "Capacity (fixed value)"}
+
+
+async def test_entering_a_capacity_stores_a_fixed_value(hass, energy_prefs, fake_forwarder):
+    entry = await setup_entry(hass)
+    fwd = fake_forwarder.instances[0]
+    result = await open_sensors(hass, entry, "battery", "Home battery")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"Power": "sensor.bat_w", "Capacity (fixed value)": 10})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    stored = entry.options[CONF_DEVICES][0]["sensors"]
+    assert stored["capacity"] == {"fixed": 10.0}
+    assert instance(fwd, "home-battery")["sensors"]["capacity"] == {"fixed": 10.0}
+
+
+async def test_editing_prefills_the_capacity(hass, energy_prefs, fake_forwarder):
+    bat = {"id": "home-battery", "device": "battery", "name": "Home battery",
+           "sensors": {"power": {"entity_id": "sensor.bat_w"}, "capacity": {"fixed": 10.0}}}
+    entry = await setup_entry(hass, {**OPTIONS, CONF_DEVICES: [bat]})
+    result = await menu(hass, entry, "edit_device")
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"device": "home-battery"})
+    assert result["step_id"] == "sensors"
+    markers = {str(k): k for k in result["data_schema"].schema}
+    assert markers["Capacity (fixed value)"].description == {"suggested_value": 10.0}
+    assert markers["Power"].description == {"suggested_value": "sensor.bat_w"}

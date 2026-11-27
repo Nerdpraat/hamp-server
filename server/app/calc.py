@@ -91,3 +91,8 @@ def cost_for(points: Sequence[tuple[int, float]],
             idx += 1
         total += delta * price
     return total
+
+
+def stored_kwh(soc_pct: float, capacity_kwh: float) -> float:
+    """Energy held by a battery: state of charge in percent of its capacity in kWh."""
+    return soc_pct / 100 * capacity_kwh

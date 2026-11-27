@@ -108,6 +108,7 @@ table.totals td.name { text-align: left; }
 .site-card.total .tile { padding: 2px 8px; display: flex; align-items: baseline; gap: 8px; background: transparent; }
 .site-card.total .tile .v { font-size: 16px; margin: 0; }
 .site-card.total .tile .n, .site-card.total .tile .sub { font-size: 11px; min-height: 0; }
+.site-card.total .tile .sub { white-space: nowrap; }
 .site-card h2 .dot { margin-left: 10px; background: #e53935; }
 .site-card h2 .dot.online { background: #43a047; }
 .site-card .tiles-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

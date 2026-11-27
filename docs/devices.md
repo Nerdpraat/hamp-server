@@ -25,6 +25,10 @@ devices:
         selector:
           domain: sensor
           device_class: energy
+      - id: capacity
+        name: "Capacity"
+        description: "Usable battery capacity in kWh, entered as a fixed number."
+        role: battery_capacity
 ```
 
 The shipped file is `server/config.example/devices.yaml`. The server checks the whole file when
@@ -95,6 +99,10 @@ battery device in their own `devices.yaml`. The shipped example already has it.
 
 ### Price slots and cost
 
+Most sensors take an entity. Some roles also accept a **fixed number**: the price roles
+(entity or number) and `battery_capacity` (number only, the role is `fixed_only`). In the protocol
+this is `allow_fixed`, and `fixed_only` for slots that never take an entity.
+
 A price slot is an ordinary sensor with a `price_*` role. The client can fill it with an entity
 (a tariff sensor, which may change over time) **or with a fixed number**: the options flow shows a
 second field "(fixed value)" for these slots. Cost is the energy delta of a counter times the price
@@ -103,6 +111,19 @@ of the same instance:
 * `grid_import` uses `price_import`, `grid_export` uses `price_export` (shown as negative),
   `gas` uses `price_gas`.
 * No price slot filled means no cost for that counter.
+
+### Battery capacity and stored energy
+
+The `capacity` slot of a battery takes a fixed number of kWh. In Home Assistant it is a number box
+named "Capacity (fixed value)" with no entity picker. Stored energy per battery is state of charge
+x capacity. It is shown:
+
+* in the overview, per site and in total, next to the average percentage;
+* as the "<battery> · Stored energy" tile on the Now tab;
+* as the "Battery stored energy" chart on the Electricity tab.
+
+A battery without a capacity shows only its percentage and is left out of the kWh sums. The average
+percentage is the plain mean over all batteries, not weighted by capacity.
 
 ## Instances and names
 

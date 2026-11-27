@@ -114,6 +114,31 @@ async def test_sends_config_with_currency_and_coalesced_readings(session, hub):
         await fwd.stop()
 
 
+async def test_a_fixed_only_slot_round_trips_as_a_fixed_value(session, hub):
+    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 10.0}}}
+    fwd = make(session, hub, instances=[battery])
+    fwd.start()
+    try:
+        await wait_for(lambda: fwd.connected)
+        assert hub.configs[0]["instances"][0]["sensors"]["capacity"] == {"fixed": 10.0}
+        assert fwd.last_error is None
+    finally:
+        await fwd.stop()
+
+
+async def test_a_source_on_a_fixed_only_slot_is_skipped_with_a_warning(session, hub, caplog):
+    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"source": "sensor.x"}}}
+    fwd = make(session, hub, instances=[battery])
+    fwd.start()
+    try:
+        await wait_for(lambda: fwd.connected)
+        sensors = hub.configs[0]["instances"][0]["sensors"]
+        assert "capacity" not in sensors and "power" in sensors
+        assert "battery-1.capacity takes only a fixed value; skipping it" in caplog.text
+    finally:
+        await fwd.stop()
+
+
 async def test_unit_lookup_comes_from_the_servers_catalogue(session, hub):
     fwd = make(session, hub)
     assert fwd.unit_for("battery", "power") is None        # nothing known before the first hello

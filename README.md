@@ -61,7 +61,7 @@ Later, **Configure** on the integration offers:
 
 | Option | What it does |
 |---|---|
-| Add a device | Pick a device type from the server's catalogue (heat pump, battery, water meter, ...), name it, and assign an entity to each sensor you have. Price slots also take a fixed number |
+| Add a device | Pick a device type from the server's catalogue (heat pump, battery, water meter, ...), name it, and assign an entity to each sensor you have. Price slots and battery capacity take a fixed number |
 | Edit a device you added | Change the entities of a device you added |
 | Remove devices | Stop sending devices. Their stored history on the server is deleted |
 | Re-run discovery | Follow the energy dashboard again and bring back every device you removed from it |

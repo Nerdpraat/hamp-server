@@ -25,7 +25,7 @@ def simple(**sensor):
 def test_shipped_catalogue_has_all_device_types(cat):
     assert [d.id for d in cat.devices] == [
         "heatpump", "solar_inverter", "battery", "gasmeter", "watermeter",
-        "electricitymeter", "consumer_device"]
+        "electricitymeter", "consumer_device", "water_heater"]
 
 
 def test_shipped_sensors_resolve_as_designed(cat):
@@ -51,6 +51,20 @@ def test_price_slots_allow_fixed_numbers(cat):
         s = cat.sensor(dev, sid)
         assert s.allow_fixed and s.kind == "gauge"
     assert not cat.sensor("battery", "power").allow_fixed
+
+
+def test_battery_capacity_slot_takes_only_a_fixed_number(cat):
+    cap = cat.sensor("battery", "capacity")
+    assert (cap.role, cap.kind, cap.unit) == ("battery_capacity", "gauge", "kWh")
+    assert cap.allow_fixed is True and cap.fixed_only is True
+    for s in cat.sensors("battery"):
+        if s.id != "capacity":
+            assert s.fixed_only is False
+    assert cat.sensor("electricitymeter", "price_import").fixed_only is False
+    hello = {s["id"]: s for d in cat.hello() if d["id"] == "battery" for s in d["sensors"]}
+    assert hello["capacity"]["fixed_only"] is True and hello["capacity"]["allow_fixed"] is True
+    assert all(isinstance(s["fixed_only"], bool) for s in hello.values())
+    assert hello["power"]["fixed_only"] is False
 
 
 def test_every_role_is_used_by_the_shipped_catalogue(cat):

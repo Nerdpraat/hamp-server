@@ -17,7 +17,8 @@ function tiles(data) {
   const grid = gridLabel(data.grid);
   const bat = batteryLabel(data.battery);
   const socText = bat.soc === null ? '' : `${formatNumber(bat.soc, 0)} %`;
-  const batSub = [bat.sub, socText].filter(Boolean).join(' · ');
+  const storedText = bat.stored === null ? '' : `${formatNumber(bat.stored, 1)} kWh`;
+  const batSub = [bat.sub, socText, storedText].filter(Boolean).join(' · ');
   return h('div', { class: 'tiles-row' },
     tile('Grid', formatPower(grid.w), grid.sub, `grid${grid.sub === 'exporting' ? ' export' : ''}`),
     tile('Solar', formatPower(data.solar ? data.solar.power_w : null), '', 'solar'),

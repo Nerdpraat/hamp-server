@@ -15,7 +15,7 @@ services:
     # Published on localhost only: your TLS reverse proxy is the only thing that talks to it,
     # so trusting its X-Forwarded-* headers is safe.
     ports:
-      - "127.0.0.1:${HUB_PORT:-8000}:8000"
+      - "${HUB_PORT:-8000}:8000"
     environment:
       FORWARDED_ALLOW_IPS: "*"
       LOG_FORMAT: json

@@ -30,9 +30,9 @@ devices:
           domain: sensor
           device_class: temperature
 
-      - id: supply_temp
-        name: "Supply Temperature"
-        description: "Outgoing water temperature."
+      - id: room_temp
+        name: "Room Temperature"
+        description: "Temperature of the room"
         selector:
           domain: sensor
           device_class: temperature
@@ -170,7 +170,6 @@ devices:
         selector:
           domain: sensor
           device_class: power
-          multiple: true
 
       - id: energy
         name: "Energy"
@@ -178,7 +177,6 @@ devices:
         selector:
           domain: sensor
           device_class: energy
-          multiple: true
 
 ```
 

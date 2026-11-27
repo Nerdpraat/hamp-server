@@ -4,10 +4,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket
 
+from .api import build_overview
 from .auth import COOKIE_NAME, session_valid
 from .ingest import SOCKET_GONE
 
@@ -78,6 +80,41 @@ async def live(ws: WebSocket, site: str):
             if changes or first:
                 first = False
                 await ws.send_json({"type": "values", "values": changes})
+            await asyncio.wait({reader}, timeout=PUSH_INTERVAL)
+    except (*SOCKET_GONE, RuntimeError):
+        pass
+    finally:
+        reader.cancel()
+
+
+OVERVIEW_REFRESH = 5.0   # recompute at least this often, so stale values and offline sites show up
+
+
+@router.websocket("/ws/overview")
+async def overview_ws(ws: WebSocket):
+    """Pushes the all-sites overview whenever it changes (checked once per PUSH_INTERVAL)."""
+    st = ws.app.state
+    if not session_valid(st.config, ws.cookies.get(COOKIE_NAME)):
+        await ws.close(code=4401)
+        return
+    if not _same_origin(ws):
+        await ws.close(code=4403)
+        return
+    await ws.accept()
+    reader = asyncio.create_task(_drain(ws))
+    last_version = -1
+    last_payload = None
+    last_check = 0.0
+    try:
+        while not reader.done():
+            now = time.time()
+            version = st.hub.version
+            if version != last_version or now - last_check >= OVERVIEW_REFRESH:
+                last_version, last_check = version, now
+                payload = await build_overview(st, now)
+                if payload != last_payload:
+                    last_payload = payload
+                    await ws.send_json({"type": "overview", "sites": payload})
             await asyncio.wait({reader}, timeout=PUSH_INTERVAL)
     except (*SOCKET_GONE, RuntimeError):
         pass

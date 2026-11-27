@@ -1,12 +1,10 @@
 // Overview: live grid, solar and battery status of every site, one card per site.
-import { api } from '../api.js';
+import { api, overviewSocketUrl } from '../api.js';
 import { h } from '../cards.js';
 import { formatNumber, formatPower } from '../format.js';
 import { batteryLabel, gridLabel, lastSeenText } from '../transform.js';
 
 export const needsDate = false;
-
-const POLL_MS = 5000;
 
 function tile(name, value, sub, cls) {
   return h('div', { class: `tile ${cls}` },
@@ -35,12 +33,14 @@ function siteCard(site, onSelect) {
   return c;
 }
 
-/** Returns a dispose function that stops polling. */
+/** Returns a dispose function that closes the websocket. */
 export async function renderOverview(el, onSelect, isStale) {
   const grid = h('div', { class: 'overview-grid' });
   el.append(grid);
   let closed = false;
-  let timer = null;
+  let ws = null;
+  let retryTimer = null;
+  let retry = 1000;
 
   const draw = (sites) => {
     if (!sites.length) {
@@ -50,22 +50,31 @@ export async function renderOverview(el, onSelect, isStale) {
     grid.replaceChildren(...sites.map((s) => siteCard(s, onSelect)));
   };
 
-  const poll = async () => {
-    timer = null;
-    if (closed) return;
-    try {
-      const sites = await api.overview();
-      if (closed || isStale()) return;
-      draw(sites);
-    } catch (err) {
-      if (closed || isStale() || err.status === 401) return;
-      if (!grid.children.length) {
-        grid.replaceChildren(h('div', { class: 'error', text: `Could not load data: ${err.message}` }));
-      }
-    }
-    if (!closed) timer = setTimeout(poll, document.hidden ? POLL_MS * 6 : POLL_MS);
-  };
+  // First paint over HTTP (also surfaces a 401 or a server error); updates then arrive by push.
+  try {
+    const sites = await api.overview();
+    if (closed || isStale()) return () => {};
+    draw(sites);
+  } catch (err) {
+    if (isStale() || err.status === 401) return () => {};
+    grid.replaceChildren(h('div', { class: 'error', text: `Could not load data: ${err.message}` }));
+  }
 
-  await poll();
-  return () => { closed = true; clearTimeout(timer); };
+  const connect = () => {
+    if (closed) return;
+    ws = new WebSocket(overviewSocketUrl());
+    ws.onopen = () => { retry = 1000; };
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'overview' && !closed) draw(msg.sites);
+    };
+    ws.onclose = () => {
+      if (closed) return;
+      retryTimer = setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 15000);
+    };
+  };
+  connect();
+
+  return () => { closed = true; clearTimeout(retryTimer); ws?.close(); };
 }

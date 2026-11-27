@@ -160,22 +160,26 @@ def overview_for_site(model: SiteModel, values: dict[str, list[float]], now: flo
     }
 
 
-@router.get("/overview", dependencies=[Depends(require_auth)])
-async def overview(request: Request):
-    """Live grid/solar/battery numbers for every configured site."""
-    st = request.app.state
-    now = time.time()
+async def build_overview(st, now: float) -> list[dict]:
+    """Live grid/solar/battery numbers for every configured site (`st` is app.state)."""
     out = []
     for s in await st.db.list_sites():
         if st.config.site(s["id"]) is None:
             continue
-        model = await _model(request, s["id"])
+        model = await load_site_model(st.db, st.config.catalogue, s["id"])
+        seen = s["last_seen"]
         out.append({
-            "id": s["id"], "name": s["name"], "last_seen": s["last_seen"],
-            "online": _is_online(request, s["id"], s["last_seen"], now),
+            "id": s["id"], "name": s["name"], "last_seen": seen,
+            "online": s["id"] in st.ingest_conns or (seen is not None and now - seen < ONLINE_WINDOW),
             **overview_for_site(model, st.hub.changes(s["id"], 0), now),
         })
     return out
+
+
+@router.get("/overview", dependencies=[Depends(require_auth)])
+async def overview(request: Request):
+    """Same data as the /ws/overview push, for a single request."""
+    return await build_overview(request.app.state, time.time())
 
 
 @router.get("/sites/{site_id}/devices", dependencies=[Depends(require_auth)])

@@ -419,3 +419,35 @@ def test_overview_endpoint_shape(authed):
     assert home["grid"]["net_w"] == 800.0
     assert home["solar"]["power_w"] == 1500.0
     assert home["battery"] is None
+
+
+def test_overview_ws_requires_cookie(client):
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/overview"):
+            pass
+
+
+def test_overview_ws_rejects_foreign_origin(authed):
+    with pytest.raises(WebSocketDisconnect):
+        with authed.websocket_connect("/ws/overview", headers={"origin": "https://evil.example"}):
+            pass
+
+
+def test_overview_ws_pushes_updates(authed):
+    now = time.time()
+    cfg = {"type": "config", "instances": [inst("roof", "solar_inverter", "Roof", power=src("sp"))]}
+    with authed.websocket_connect("/ws/ingest", headers={"Authorization": f"Bearer {HOME_TOKEN}"}) as ing:
+        ing.receive_json()
+        ing.send_json(cfg)
+        ing.receive_json()
+        ing.send_json({"type": "states", "items": [{"key": "roof.power", "ts": now, "value": 100.0}]})
+        ing.receive_json()
+        with authed.websocket_connect("/ws/overview") as ws:
+            first = ws.receive_json()
+            assert first["type"] == "overview"
+            home = next(s for s in first["sites"] if s["id"] == "home")
+            assert home["solar"]["power_w"] == 100.0
+            ing.send_json({"type": "states", "items": [{"key": "roof.power", "ts": now + 1, "value": 250.0}]})
+            ing.receive_json()
+            nxt = ws.receive_json()          # pushed on the next tick
+            assert next(s for s in nxt["sites"] if s["id"] == "home")["solar"]["power_w"] == 250.0

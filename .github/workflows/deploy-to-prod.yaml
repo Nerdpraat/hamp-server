@@ -1,0 +1,21 @@
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Run every saturday at 4 AM UTC
+    - cron: '0 4 * * 6'
+
+jobs:
+  docker-compose:
+    runs-on: [self-hosted, Linux, np-prod]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Run Docker Compose
+        env:
+          CONFIG_DIR: ${{ vars.CONFIG_DIR }}
+          DATA_DIR: ${{ vars.DATA_DIR }}
+          HUB_PORT: ${{ vars.HUB_PORT }}
+        run: docker/deploy.sh

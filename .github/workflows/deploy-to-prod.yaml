@@ -5,6 +5,7 @@ on:
   schedule:
     # Run every saturday at 4 AM UTC
     - cron: '0 4 * * 6'
+  workflow_dispatch:
 
 jobs:
   docker-compose:
@@ -18,4 +19,4 @@ jobs:
           CONFIG_DIR: ${{ vars.CONFIG_DIR }}
           DATA_DIR: ${{ vars.DATA_DIR }}
           HUB_PORT: ${{ vars.HUB_PORT }}
-        run: docker/deploy.sh
+        run: ./deploy.sh

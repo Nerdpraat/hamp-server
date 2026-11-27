@@ -355,8 +355,21 @@ async def test_a_fixed_only_slot_has_only_a_number_field_with_its_unit(hass, ene
     assert fields(result) == {"State of Charge", "Power", "Energy Charged", "Energy Discharged",
                               "Capacity (fixed value)"}
     schema = {str(k): v for k, v in result["data_schema"].schema.items()}
-    assert schema["Capacity (fixed value)"].config["unit_of_measurement"] == "kWh"
-    assert schema["Capacity (fixed value)"].config["min"] == 0
+    config = schema["Capacity (fixed value)"].config
+    assert config["unit_of_measurement"] == "Wh"
+    assert (config["min"], config["max"], config["step"]) == (0, 100000, 0.1)
+    assert config["mode"] == "box"
+
+
+async def test_a_number_slot_without_settings_gets_the_defaults(hass, energy_prefs, fake_forwarder):
+    from custom_components.energy_hub.config_flow import sensor_schema
+    from catalogue import DEVICES
+    battery = next(d for d in DEVICES if d["id"] == "battery")
+    bare = {**battery, "sensors": [
+        {**s, "selector": {k: v for k, v in s["selector"].items() if k != "number"}} for s in battery["sensors"]]}
+    config = {str(k): v for k, v in sensor_schema(bare).items()}["Capacity (fixed value)"].config
+    assert (config["min"], config["max"], config["step"]) == (0, 1000, "any")
+    assert config["unit_of_measurement"] == "Wh"        # fixed-only slots fall back to the sensor's unit
 
 
 async def test_price_slots_keep_both_fields(hass, energy_prefs, fake_forwarder):

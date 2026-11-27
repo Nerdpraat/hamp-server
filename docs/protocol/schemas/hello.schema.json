@@ -59,7 +59,18 @@
           "required": ["domain"],
           "properties": {
             "domain": {"type": "array", "items": {"type": "string"}},
-            "device_class": {"type": "array", "items": {"type": "string"}}
+            "device_class": {"type": "array", "items": {"type": "string"}},
+            "number": {
+              "type": "object",
+              "properties": {
+                "min": {"type": "number"},
+                "max": {"type": "number"},
+                "step": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"const": "any"}]},
+                "unit_of_measurement": {"type": "string"},
+                "mode": {"enum": ["box", "slider"]}
+              },
+              "additionalProperties": false
+            }
           }
         }
       }

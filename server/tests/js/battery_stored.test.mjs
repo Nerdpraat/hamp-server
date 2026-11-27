@@ -11,14 +11,14 @@ const bat = (id, name, key, fixed) => ({
 });
 
 test('storedEnergy', () => {
-  assert.equal(storedEnergy(50, 10), 5);
-  assert.equal(storedEnergy(null, 10), null);
-  assert.equal(storedEnergy(undefined, 10), null);
-  assert.equal(storedEnergy(NaN, 10), null);
+  assert.equal(storedEnergy(50, 10000), 5);
+  assert.equal(storedEnergy(null, 10000), null);
+  assert.equal(storedEnergy(undefined, 10000), null);
+  assert.equal(storedEnergy(NaN, 10000), null);
   assert.equal(storedEnergy(50, null), null);
   assert.equal(storedEnergy(50, 0), null);
   assert.equal(storedEnergy(50, -5), null);
-  assert.equal(storedEnergy(0, 10), 0);
+  assert.equal(storedEnergy(0, 10000), 0);
 });
 
 test('batteriesWithCapacity reads capacity from fixed and skips incomplete instances', () => {
@@ -31,7 +31,7 @@ test('batteriesWithCapacity reads capacity from fixed and skips incomplete insta
 });
 
 test('storedSeries per battery, keeps null points, omits batteries without capacity or SOC series', () => {
-  const instances = [bat('a', 'Battery 1', 'a.soc', 10), bat('b', 'Battery 2', 'b.soc', 20),
+  const instances = [bat('a', 'Battery 1', 'a.soc', 10000), bat('b', 'Battery 2', 'b.soc', 20000),
     bat('c', 'Battery 3', 'c.soc'), bat('d', 'Battery 4', 'd.soc', 5)];
   const gauges = {
     'a.soc': { points: [[1, 50, 40, 60], [2, null, null, null], [3, 100, 100, 100]] },

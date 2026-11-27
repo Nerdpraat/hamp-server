@@ -249,15 +249,15 @@ export function sumSites(sites) {
   };
 }
 
-/** Stored energy in kWh from a state of charge in % and a capacity in kWh; null when unknown or invalid. */
-export function storedEnergy(soc, capacity) {
+/** Stored energy in kWh from a state of charge in % and a capacity in Wh; null when unknown or invalid. */
+export function storedEnergy(soc, capacityWh) {
   const ok = (v) => v !== null && v !== undefined && !Number.isNaN(v);
-  if (!ok(soc) || !ok(capacity) || capacity <= 0) return null;
-  return (soc / 100) * capacity;
+  if (!ok(soc) || !ok(capacityWh) || capacityWh <= 0) return null;
+  return ((soc / 100) * capacityWh) / 1000;
 }
 
 /**
- * Batteries that have both a state-of-charge entity and a fixed capacity > 0:
+ * Batteries that have both a state-of-charge entity and a fixed capacity (in Wh) > 0:
  * [{id, name, socKey, capacity}]. Instances lacking either are omitted.
  */
 export function batteriesWithCapacity(instances) {

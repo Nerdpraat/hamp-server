@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
 from .errors import ConfigError, validation_message
 
@@ -48,7 +48,7 @@ _ROLE_LIST = [
     RoleSpec("solar_power", "gauge", "W", 1, "#ff9800", "Solar power", "power"),
     RoleSpec("battery_power", "gauge", "W", 1, "#4db6ac", "Battery power", "power"),
     RoleSpec("battery_soc", "gauge", "%", 1, None, "Battery level", "battery_state"),
-    RoleSpec("battery_capacity", "gauge", "kWh", 1, None, "Battery capacity", "battery_capacity",
+    RoleSpec("battery_capacity", "gauge", "Wh", 1, None, "Battery capacity", "battery_capacity",
              fixed_only=True),
     RoleSpec("device_power", "gauge", "W", 1, None, "Device power", "device_power"),
     RoleSpec("price_import", "gauge", "/kWh", 1, None, "Import price", "price", price=True),
@@ -77,11 +77,37 @@ def _as_list(value: Any) -> list[str]:
     return list(value)
 
 
+class NumberInput(BaseModel):
+    """How a client should present the number box of a slot that takes a fixed number.
+
+    The names follow Home Assistant's number selector. `min` and `max` are also enforced by the
+    server on incoming fixed values.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min: float | None = None
+    max: float | None = None
+    step: float | Literal["any"] | None = None
+    unit_of_measurement: str | None = None
+    mode: Literal["box", "slider"] = "box"
+
+    @model_validator(mode="after")
+    def _range(self) -> "NumberInput":
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"number.min ({self.min}) is larger than number.max ({self.max})")
+        if isinstance(self.step, (int, float)) and self.step <= 0:
+            raise ValueError("number.step must be greater than 0 (or 'any')")
+        return self
+
+
 class Selector(BaseModel):
-    """Which Home Assistant entities fit a slot (domain and device class)."""
+    """Which Home Assistant entities fit a slot (domain and device class), and for a slot that takes a
+    fixed number, how its number box looks (`number`)."""
 
     domain: list[str] = Field(default_factory=lambda: ["sensor"])
     device_class: list[str] = Field(default_factory=list)
+    number: NumberInput | None = None
 
     @field_validator("domain", "device_class", mode="before")
     @classmethod
@@ -124,6 +150,14 @@ class SensorDef(BaseModel):
         if self.role and self.kind and self.kind != ROLES[self.role].kind:
             raise ValueError(
                 f"kind {self.kind!r} conflicts with role {self.role!r}, which is a {ROLES[self.role].kind}")
+        return self
+
+    @model_validator(mode="after")
+    def _number_needs_a_fixed_slot(self) -> "SensorDef":
+        role = ROLES[self.role] if self.role else None
+        if self.selector.number is not None and not (role and (role.price or role.fixed_only)):
+            raise ValueError("selector.number is only allowed on a sensor that takes a fixed number "
+                             "(a price role or a fixed-only role such as battery_capacity)")
         return self
 
 
@@ -235,6 +269,8 @@ class Catalogue(BaseModel):
                 selector: dict[str, Any] = {"domain": list(rs.selector.domain)}
                 if rs.selector.device_class:
                     selector["device_class"] = list(rs.selector.device_class)
+                if rs.selector.number is not None:
+                    selector["number"] = rs.selector.number.model_dump(exclude_none=True)
                 sensors.append({
                     "id": rs.id, "name": rs.name, "description": rs.description,
                     "kind": rs.kind, "unit": rs.unit, "allow_fixed": rs.allow_fixed,

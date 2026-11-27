@@ -124,12 +124,18 @@ def test_config_is_stored_and_acknowledged(client):
 
 
 def test_battery_capacity_accepts_a_fixed_number(client):
-    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 10}}}
+    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 10000}}}
     with opened(client) as c:
         ack = c.call(config(battery))
     assert ack["type"] == "ack" and ack["sensors"] == 4
     fixed = db_rows(client, "SELECT instance, sensor_id, value FROM fixed_values")
-    assert fixed == [{"instance": "battery-1", "sensor_id": "capacity", "value": 10.0}]
+    assert fixed == [{"instance": "battery-1", "sensor_id": "capacity", "value": 10000.0}]
+
+
+def test_battery_capacity_at_the_limit_is_accepted(client):
+    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 100000}}}
+    with opened(client) as c:
+        assert c.call(config(battery))["type"] == "ack"
 
 
 @pytest.mark.parametrize("bad,path,fragment", [
@@ -168,6 +174,8 @@ def test_battery_capacity_accepts_a_fixed_number(client):
      "instances[0].sensors.capacity.fixed", "greater than 0"),
     ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": -5}}}]},
      "instances[0].sensors.capacity.fixed", "greater than 0"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": 100000.5}}}]},
+     "instances[0].sensors.capacity.fixed", "at most 100000"),
 ])
 def test_invalid_config_is_rejected_with_a_path_and_the_connection_stays_open(client, bad, path, fragment):
     with opened(client) as c:

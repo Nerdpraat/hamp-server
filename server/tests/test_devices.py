@@ -55,7 +55,7 @@ def test_price_slots_allow_fixed_numbers(cat):
 
 def test_battery_capacity_slot_takes_only_a_fixed_number(cat):
     cap = cat.sensor("battery", "capacity")
-    assert (cap.role, cap.kind, cap.unit) == ("battery_capacity", "gauge", "kWh")
+    assert (cap.role, cap.kind, cap.unit) == ("battery_capacity", "gauge", "Wh")
     assert cap.allow_fixed is True and cap.fixed_only is True
     for s in cat.sensors("battery"):
         if s.id != "capacity":
@@ -65,6 +65,35 @@ def test_battery_capacity_slot_takes_only_a_fixed_number(cat):
     assert hello["capacity"]["fixed_only"] is True and hello["capacity"]["allow_fixed"] is True
     assert all(isinstance(s["fixed_only"], bool) for s in hello.values())
     assert hello["power"]["fixed_only"] is False
+    assert hello["capacity"]["unit"] == "Wh"
+
+
+def test_capacity_number_settings_reach_the_client_in_hello(cat):
+    hello = {s["id"]: s for d in cat.hello() if d["id"] == "battery" for s in d["sensors"]}
+    assert hello["capacity"]["selector"]["number"] == {
+        "min": 0, "max": 100000, "step": 0.1, "unit_of_measurement": "Wh", "mode": "box"}
+    assert "number" not in hello["power"]["selector"]
+
+
+def test_number_settings_are_optional_and_partial(cat):
+    data = simple(role="price_import", selector={"number": {"max": 5}})
+    sensor = parse_catalogue(data).sensor("d", "s")
+    assert sensor.selector.number.max == 5 and sensor.selector.number.mode == "box"
+    assert parse_catalogue(data).hello()[0]["sensors"][0]["selector"]["number"] == {"max": 5, "mode": "box"}
+
+
+@pytest.mark.parametrize("sensor,fragment", [
+    ({"selector": {"number": {"max": 5}}}, "only allowed on a sensor that takes a fixed number"),
+    ({"role": "battery_soc", "selector": {"number": {"max": 5}}}, "only allowed on a sensor that takes a fixed number"),
+    ({"role": "battery_capacity", "selector": {"number": {"min": 10, "max": 5}}}, "larger than number.max"),
+    ({"role": "battery_capacity", "selector": {"number": {"step": 0}}}, "greater than 0"),
+    ({"role": "battery_capacity", "selector": {"number": {"mode": "dial"}}}, "box"),
+    ({"role": "battery_capacity", "selector": {"number": {"colour": "red"}}}, "colour"),
+])
+def test_invalid_number_settings_stop_startup(sensor, fragment):
+    with pytest.raises(ConfigError) as err:
+        parse_catalogue(simple(**sensor))
+    assert fragment in str(err.value)
 
 
 def test_every_role_is_used_by_the_shipped_catalogue(cat):
@@ -186,6 +215,7 @@ def test_the_users_original_file_still_loads_without_roles():
     for d in stripped["devices"]:
         for s in d["sensors"]:
             s.pop("role", None)
+            s.get("selector", {}).pop("number", None)     # a number box needs a slot that takes a fixed number
     c = parse_catalogue(stripped)
     assert all(not rs.dashboard for d in c.devices for rs in c.sensors(d.id))
 

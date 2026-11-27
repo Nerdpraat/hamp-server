@@ -134,11 +134,11 @@ def test_devices_shows_the_battery_capacity_as_a_fixed_sensor(authed):
 
     async def go():
         await db.replace_config("home", [
-            inst("bat", "battery", "Battery", power=src("bp"), capacity={"fixed": 10})])
+            inst("bat", "battery", "Battery", power=src("bp"), capacity={"fixed": 10000})])
     authed.portal.call(go)
     bat = authed.get("/api/sites/home/devices").json()["instances"][0]
     cap = {s["id"]: s for s in bat["sensors"]}["capacity"]
-    assert cap["fixed"] == 10 and cap["key"] is None and cap["unit"] == "kWh"
+    assert cap["fixed"] == 10000 and cap["key"] is None and cap["unit"] == "Wh"
 
 
 def test_instances_removed_from_the_catalogue_are_skipped(authed):
@@ -377,7 +377,7 @@ def test_static_files_are_revalidated(client):
 def _fake_model(*pairs, capacity=None):
     """A stand-in for SiteModel: overview_for_site reads `entities` (key, role, instance) and `fixed`.
 
-    The instance is the key's part before the dot; `capacity` maps instance -> fixed kWh.
+    The instance is the key's part before the dot; `capacity` maps instance -> fixed Wh.
     """
     from types import SimpleNamespace
     ents = [SimpleNamespace(key=k, role=r, instance=k.split(".")[0]) for k, r in pairs]
@@ -413,14 +413,14 @@ def test_overview_helper_drops_stale_and_missing():
 
 def test_overview_stored_energy_from_soc_and_capacity():
     from app.api import overview_for_site
-    out = overview_for_site(_fake_model(("b1.s", "battery_soc"), capacity={"b1": 10.0}), {"b1.s": [5.0, 62.0]}, 5.0)
+    out = overview_for_site(_fake_model(("b1.s", "battery_soc"), capacity={"b1": 10000.0}), {"b1.s": [5.0, 62.0]}, 5.0)
     assert out["battery"]["stored_kwh"] == pytest.approx(6.2)
     assert out["battery"]["soc_n"] == 1
 
 
 def test_overview_stored_energy_skips_batteries_without_capacity():
     from app.api import overview_for_site
-    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10000.0})
     out = overview_for_site(model, {"b1.s": [5.0, 40.0], "b2.s": [5.0, 80.0]}, 5.0)
     assert out["battery"]["stored_kwh"] == pytest.approx(4.0)
     assert out["battery"]["soc"] == pytest.approx(60.0) and out["battery"]["soc_n"] == 2
@@ -429,7 +429,7 @@ def test_overview_stored_energy_skips_batteries_without_capacity():
 def test_overview_stored_energy_ignores_stale_soc_and_none_without_capacity():
     from app.api import ONLINE_WINDOW, overview_for_site
     now = 10_000.0
-    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10000.0})
     out = overview_for_site(model, {"b1.s": [now - ONLINE_WINDOW - 1, 40.0], "b2.s": [now, 80.0]}, now)
     assert out["battery"]["stored_kwh"] is None and out["battery"]["soc_n"] == 1
     out = overview_for_site(_fake_model(("b2.s", "battery_soc")), {"b2.s": [now, 80.0]}, now)

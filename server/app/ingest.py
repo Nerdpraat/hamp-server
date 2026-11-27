@@ -134,6 +134,12 @@ def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
                         raise ConfigProblem(f"{sp}.fixed", "must be a number greater than 0")
                 elif not _is_number(fixed) or fixed < 0:
                     raise ConfigProblem(f"{sp}.fixed", "must be a number of 0 or more")
+                limits = sensor.selector.number
+                if limits is not None:
+                    if limits.min is not None and fixed < limits.min:
+                        raise ConfigProblem(f"{sp}.fixed", f"must be at least {limits.min:g}")
+                    if limits.max is not None and fixed > limits.max:
+                        raise ConfigProblem(f"{sp}.fixed", f"must be at most {limits.max:g}")
                 clean[sid] = {"fixed": float(fixed)}
         result.append({"id": iid, "device": device, "name": name, "sensors": clean})
     return currency, result

@@ -130,8 +130,15 @@ devices:
 
       - id: capacity
         name: "Capacity"
-        description: "Usable battery capacity in kWh, entered as a fixed number."
+        description: "Usable battery capacity in Wh, entered as a fixed number."
         role: battery_capacity
+        selector:
+          number:
+            min: 0
+            max: 100000
+            step: 0.1
+            unit_of_measurement: "Wh"
+            mode: box
 
   - id: gasmeter
     name: "Gas Meter"

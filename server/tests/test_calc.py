@@ -58,5 +58,5 @@ def test_cost_without_price_is_none():
 
 
 def test_stored_kwh():
-    assert calc.stored_kwh(50, 10) == pytest.approx(5.0)
-    assert calc.stored_kwh(0, 10) == 0 and calc.stored_kwh(100, 13.5) == pytest.approx(13.5)
+    assert calc.stored_kwh(50, 10000) == pytest.approx(5.0)
+    assert calc.stored_kwh(0, 10000) == 0 and calc.stored_kwh(100, 13500) == pytest.approx(13.5)

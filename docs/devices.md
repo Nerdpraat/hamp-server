@@ -27,8 +27,15 @@ devices:
           device_class: energy
       - id: capacity
         name: "Capacity"
-        description: "Usable battery capacity in kWh, entered as a fixed number."
+        description: "Usable battery capacity in Wh, entered as a fixed number."
         role: battery_capacity
+        selector:
+          number:
+            min: 0
+            max: 100000
+            step: 0.1
+            unit_of_measurement: "Wh"
+            mode: box
 ```
 
 The shipped file is `server/config.example/devices.yaml`. The server checks the whole file when
@@ -47,7 +54,7 @@ the catalogue at request time.
 | sensor | `id` | yes | lower case letters, digits and `_`; unique within the device |
 | sensor | `name` | yes | unique within the device. **Labels the form field in Home Assistant**, so names must differ |
 | sensor | `description` | no | explained under the form |
-| sensor | `selector` | no | which entities fit: `domain` (default `sensor`) and `device_class`. Each is a string or a list |
+| sensor | `selector` | no | which entities fit: `domain` (default `sensor`) and `device_class`. Each is a string or a list. Slots that take a fixed number (price roles, `battery_capacity`) may add `number`, see below |
 | sensor | `role` | no | how the dashboard uses the sensor, see below. Without a role the sensor only appears in the Devices tab |
 | sensor | `kind` | no | `counter` (a cumulative meter) or `gauge` (an instantaneous value). Default: from the role, else from the `device_class` |
 | sensor | `unit` | no | the unit the server stores. Default: from the role, else from the `device_class`. The client converts Home Assistant's unit to it |
@@ -91,11 +98,14 @@ A role tells the dashboard what a sensor means. Roles are fixed in the server co
 | `battery_soc` | gauge | % | | battery level (the mean over all batteries is shown) |
 | `device_power` | gauge | W | | device power |
 | `battery_capacity` | gauge | kWh | | usable battery capacity; fixed number only, used to compute stored energy |
+| `battery_capacity` | gauge | Wh | | usable battery capacity; fixed number only, used to compute stored energy |
 | `price_import`, `price_export` | gauge | /kWh | | price slots, see below |
 | `price_gas` | gauge | /m3 | | price slot |
 
-Existing deployments must add the `capacity` slot (id `capacity`, role `battery_capacity`) to the
-battery device in their own `devices.yaml`. The shipped example already has it.
+Existing deployments must add the `capacity` slot (id `capacity`, role `battery_capacity`, with the
+`selector.number` block shown above) to the battery device in their own `devices.yaml`, or change an
+older kWh version to this one. The shipped example already has it. Capacities that were entered in
+kWh before the change must be entered again in Wh (10 kWh becomes 10000).
 
 ### Price slots and cost
 
@@ -114,9 +124,9 @@ of the same instance:
 
 ### Battery capacity and stored energy
 
-The `capacity` slot of a battery takes a fixed number of kWh. In Home Assistant it is a number box
+The `capacity` slot of a battery takes a fixed number of Wh. In Home Assistant it is a number box
 named "Capacity (fixed value)" with no entity picker. Stored energy per battery is state of charge
-x capacity. It is shown:
+x capacity, shown in kWh. It is shown:
 
 * in the overview, per site and in total, next to the average percentage;
 * as the "<battery> · Stored energy" tile on the Now tab;
@@ -124,6 +134,21 @@ x capacity. It is shown:
 
 A battery without a capacity shows only its percentage and is left out of the kWh sums. The average
 percentage is the plain mean over all batteries, not weighted by capacity.
+
+### The number box: `selector.number`
+
+A slot that takes a fixed number (a price role or `battery_capacity`) can describe its number box in
+`selector.number`. All fields are optional:
+
+| Field | Meaning |
+|---|---|
+| `min`, `max` | allowed range. The **server enforces them** on incoming fixed values, so every client is held to them |
+| `step` | a number, or `any` |
+| `unit_of_measurement` | shown next to the box. For a `fixed_only` slot the default is the sensor's unit |
+| `mode` | `box` (default) or `slider` |
+
+Without `number` the Home Assistant box is 0 to 1000 with step `any`. `number` on any other sensor is
+refused at startup.
 
 ## Instances and names
 

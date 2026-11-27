@@ -68,9 +68,10 @@ client -> config           at any time: replaces the previous config
       {"id": "energy_charged", "name": "Energy Charged", "description": "Total energy stored into the battery.",
        "kind": "counter", "unit": "kWh", "allow_fixed": false,
        "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
-      {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in kWh, entered as a fixed number.",
-       "kind": "gauge", "unit": "kWh", "allow_fixed": true, "fixed_only": true,
-       "selector": {"domain": ["sensor"]}}
+      {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in Wh, entered as a fixed number.",
+       "kind": "gauge", "unit": "Wh", "allow_fixed": true, "fixed_only": true,
+       "selector": {"domain": ["sensor"], "number": {"min": 0, "max": 100000, "step": 0.1,
+                                                     "unit_of_measurement": "Wh", "mode": "box"}}}
     ]}
  ]}
 ```
@@ -83,7 +84,9 @@ client -> config           at any time: replaces the previous config
 * `unit`: the unit the server expects. **The client converts to it before sending.** An empty unit
   means no conversion.
 * `selector`: a hint for building a picker. `domain` and `device_class` use Home Assistant's names.
-  Other clients MAY ignore it.
+  Other clients MAY ignore it. For a slot that takes a fixed number it may also hold `number`, the
+  settings of the number box: `min`, `max`, `step` (a number or `"any"`), `unit_of_measurement` and
+  `mode` (`box` or `slider`), all optional. The server rejects a fixed value outside `min` and `max`.
 * `allow_fixed`: the slot may be given a constant number instead of a source (prices, battery capacity).
 * `fixed_only` (optional, default `false`): the slot takes only a fixed number, never a source.
   Clients should show only a number field. A missing flag means `false`.

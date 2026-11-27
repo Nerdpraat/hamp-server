@@ -42,6 +42,20 @@ def _selector_config(sensor: dict[str, Any]) -> EntitySelectorConfig:
     return EntitySelectorConfig(filter=[flt])
 
 
+def _number_config(sensor: dict[str, Any]) -> NumberSelectorConfig:
+    """The fixed-number box of a slot. The server's `selector.number` decides min, max, step, unit and
+    mode. Without it (price slots, or an older server) the defaults are a 0..1000 box."""
+    given = sensor["selector"].get("number") or {}
+    number: dict[str, Any] = {
+        "min": given.get("min", 0), "max": given.get("max", 1000), "step": given.get("step", "any"),
+        "mode": NumberSelectorMode.SLIDER if given.get("mode") == "slider" else NumberSelectorMode.BOX,
+    }
+    unit = given.get("unit_of_measurement") or (sensor.get("unit") if sensor.get("fixed_only") else None)
+    if unit:
+        number["unit_of_measurement"] = unit
+    return NumberSelectorConfig(**number)
+
+
 def sensor_schema(device: dict[str, Any]) -> dict[vol.Marker, Any]:
     """One optional entity field per sensor slot. Dynamic fields have no translations, so the
     field *name* is the slot's name; price slots get a second field for a fixed number."""
@@ -51,10 +65,7 @@ def sensor_schema(device: dict[str, Any]) -> dict[vol.Marker, Any]:
         if not fixed_only:
             fields[vol.Optional(s["name"])] = EntitySelector(_selector_config(s))
         if s["allow_fixed"] or fixed_only:
-            number: dict[str, Any] = {"min": 0, "max": 1000, "step": "any", "mode": NumberSelectorMode.BOX}
-            if fixed_only and s.get("unit"):
-                number["unit_of_measurement"] = s["unit"]
-            fields[vol.Optional(s["name"] + FIXED_SUFFIX)] = NumberSelector(NumberSelectorConfig(**number))
+            fields[vol.Optional(s["name"] + FIXED_SUFFIX)] = NumberSelector(_number_config(s))
     return fields
 
 

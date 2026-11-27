@@ -1,10 +1,12 @@
 """A small device catalogue shared by the client tests (the shape of the protocol `hello.devices`)."""
 
 
-def sensor(sid, name, kind, unit, allow_fixed=False, device_class=None, fixed_only=False):
+def sensor(sid, name, kind, unit, allow_fixed=False, device_class=None, fixed_only=False, number=None):
     selector = {"domain": ["sensor"]}
     if device_class:
         selector["device_class"] = [device_class]
+    if number:
+        selector["number"] = number
     return {"id": sid, "name": name, "description": name, "kind": kind, "unit": unit,
             "allow_fixed": allow_fixed or fixed_only, "fixed_only": fixed_only, "selector": selector}
 
@@ -15,7 +17,8 @@ DEVICES = [
         sensor("power", "Power", "gauge", "W", device_class="power"),
         sensor("energy_charged", "Energy Charged", "counter", "kWh", device_class="energy"),
         sensor("energy_discharged", "Energy Discharged", "counter", "kWh", device_class="energy"),
-        sensor("capacity", "Capacity", "gauge", "kWh", fixed_only=True)]},
+        sensor("capacity", "Capacity", "gauge", "Wh", fixed_only=True,
+               number={"min": 0, "max": 100000, "step": 0.1, "unit_of_measurement": "Wh", "mode": "box"})]},
     {"id": "electricitymeter", "name": "Electricity Meter", "description": "Grid", "category": "utilities",
      "sensors": [
          sensor("energy_import", "Energy Import", "counter", "kWh", device_class="energy"),

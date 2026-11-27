@@ -215,12 +215,30 @@ export function batteryLabel(battery) {
   return { sub: p > 0 ? 'discharging' : 'charging', w: Math.abs(p), soc };
 }
 
-/** "5 min ago" style text for a unix timestamp in seconds, or "never". */
-export function lastSeenText(lastSeen, nowSec) {
-  if (lastSeen === null || lastSeen === undefined) return 'never seen';
-  const s = Math.max(0, nowSec - lastSeen);
-  if (s < 60) return 'last seen just now';
-  if (s < 3600) return `last seen ${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `last seen ${Math.floor(s / 3600)} h ago`;
-  return `last seen ${Math.floor(s / 86400)} d ago`;
+/** Hover text of the connection dot. `lastSeen` is a unix timestamp in seconds or null. */
+export function connectionTitle(online, lastSeen) {
+  if (online) return 'connected';
+  if (lastSeen === null || lastSeen === undefined) return 'disconnected, never connected';
+  return `disconnected, last connected ${new Date(lastSeen * 1000).toLocaleString()}`;
+}
+
+/** Sum of all sites in the shape of one site entry. A group is null when no site has data for it. */
+export function sumSites(sites) {
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+  const grids = sites.map((s) => s.grid).filter(Boolean);
+  const solars = sites.map((s) => s.solar?.power_w).filter((v) => v !== null && v !== undefined);
+  const bats = sites.map((s) => s.battery).filter(Boolean);
+  const powers = bats.map((b) => b.power_w).filter((v) => v !== null && v !== undefined);
+  const socs = bats.map((b) => b.soc).filter((v) => v !== null && v !== undefined);
+  return {
+    grid: grids.length ? {
+      import_w: sum(grids.map((g) => g.import_w)), export_w: sum(grids.map((g) => g.export_w)),
+      net_w: sum(grids.map((g) => g.net_w)),
+    } : null,
+    solar: solars.length ? { power_w: sum(solars) } : null,
+    battery: bats.length ? {
+      power_w: powers.length ? sum(powers) : null,
+      soc: socs.length ? sum(socs) / socs.length : null,
+    } : null,
+  };
 }

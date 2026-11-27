@@ -2,7 +2,7 @@
 import { api, overviewSocketUrl } from '../api.js';
 import { h } from '../cards.js';
 import { formatNumber, formatPower } from '../format.js';
-import { batteryLabel, gridLabel, lastSeenText } from '../transform.js';
+import { batteryLabel, connectionTitle, gridLabel, sumSites } from '../transform.js';
 
 export const needsDate = false;
 
@@ -13,24 +13,31 @@ function tile(name, value, sub, cls) {
     h('div', { class: 'sub', text: sub || '\u00a0' }));
 }
 
-function siteCard(site, onSelect) {
-  const grid = gridLabel(site.grid);
-  const bat = batteryLabel(site.battery);
+function tiles(data) {
+  const grid = gridLabel(data.grid);
+  const bat = batteryLabel(data.battery);
   const socText = bat.soc === null ? '' : `${formatNumber(bat.soc, 0)} %`;
   const batSub = [bat.sub, socText].filter(Boolean).join(' · ');
-  const head = h('h2', {}, h('span', { text: site.name }),
-    h('span', { class: `dot${site.online ? ' online' : ''}`, title: site.online ? 'client connected' : 'client offline' }));
-  const body = h('div', { class: 'tiles-row' },
-    tile('Grid', formatPower(grid.w), grid.sub, 'grid'),
-    tile('Solar', formatPower(site.solar ? site.solar.power_w : null), '', 'solar'),
+  return h('div', { class: 'tiles-row' },
+    tile('Grid', formatPower(grid.w), grid.sub, `grid${grid.sub === 'exporting' ? ' export' : ''}`),
+    tile('Solar', formatPower(data.solar ? data.solar.power_w : null), '', 'solar'),
     tile('Battery', formatPower(bat.w), batSub, 'battery'));
+}
+
+function siteCard(site, onSelect) {
+  const head = h('h2', {}, h('span', { class: 'name', text: site.name }),
+    h('span', { class: `dot${site.online ? ' online' : ''}`, title: connectionTitle(site.online, site.last_seen) }));
   const c = h('section', { class: `card site-card${site.online ? '' : ' offline'}`, tabindex: '0', role: 'button',
-    'aria-label': `Open ${site.name}` }, head, body);
-  if (!site.online) c.append(h('div', { class: 'seen', text: lastSeenText(site.last_seen, Date.now() / 1000) }));
+    'aria-label': `Open ${site.name}` }, head, tiles(site));
   const open = () => onSelect(site.id);
   c.addEventListener('click', open);
   c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
   return c;
+}
+
+function totalCard(sites) {
+  return h('section', { class: 'card site-card total' },
+    h('h2', {}, h('span', { class: 'name', text: 'All sites' })), tiles(sumSites(sites)));
 }
 
 /** Returns a dispose function that closes the websocket. */
@@ -47,7 +54,7 @@ export async function renderOverview(el, onSelect, isStale) {
       grid.replaceChildren(h('div', { class: 'empty', text: 'No sites available.' }));
       return;
     }
-    grid.replaceChildren(...sites.map((s) => siteCard(s, onSelect)));
+    grid.replaceChildren(totalCard(sites), ...sites.map((s) => siteCard(s, onSelect)));
   };
 
   // First paint over HTTP (also surfaces a 401 or a server error); updates then arrive by push.

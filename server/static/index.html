@@ -4,23 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Energy Hub</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header id="topbar">
-    <nav id="tabs">
-      <a href="#/overview" data-view="overview">Overview</a>
+    <div class="row1">
+      <nav class="crumb" aria-label="Breadcrumb">
+        <a href="#/overview" id="crumb-all">All sites</a>
+        <span id="crumb-sep" class="chev" aria-hidden="true">&#8250;</span>
+        <span id="crumb-site" class="crumb-site">
+          <span id="site-dot" class="dot" title="site status"></span>
+          <select id="site" aria-label="Site"></select>
+        </span>
+      </nav>
+      <button id="logout" title="Log out">Log out</button>
+    </div>
+    <nav id="tabs" aria-label="Site sections">
       <a href="#/summary" data-view="summary">Summary</a>
       <a href="#/electricity" data-view="electricity">Electricity</a>
       <a href="#/gas" data-view="gas">Gas</a>
       <a href="#/devices" data-view="devices">Devices</a>
       <a href="#/now" data-view="now">Now</a>
     </nav>
-    <div class="right">
-      <span id="site-dot" class="dot" title="site status"></span>
-      <select id="site" aria-label="Site"></select>
-      <button id="logout" title="Log out">Log out</button>
-    </div>
   </header>
 
   <main id="view"></main>

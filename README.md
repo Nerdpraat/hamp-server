@@ -83,7 +83,7 @@ energy dashboard.
 
 | Tab | Shows |
 |---|---|
-| Overview | the landing page: one card per site with live grid (net import/export), solar and battery (power and level) numbers, pushed over a websocket (`/ws/overview`) as they change. Click a card to open that site's Summary. Offline sites are greyed out with their last-seen time. A value shows "–" when the site has no fresh sensor for it. Uses the roles `grid_power_import`, `grid_power_export`, `solar_power`, `battery_power` and `battery_soc` |
+| Overview | the landing page: one card per site with live grid (net import/export), solar and battery (power and level) numbers, pushed over a websocket (`/ws/overview`) as they change. An "All sites" card at the top sums them. The Grid value is blue while importing and purple while exporting. Click a site card to open that site's Summary. Each site has a green (connected) or red (disconnected) dot, and hovering over it shows the last connected time. Offline sites are greyed out. A value shows "–" when the site has no fresh sensor for it. Uses the roles `grid_power_import`, `grid_power_export`, `solar_power`, `battery_power` and `battery_soc` |
 | Summary | energy distribution, totals with cost, power sources, electricity, gas |
 | Electricity | import, export, solar, battery, devices, untracked consumption, energy flow |
 | Gas | gas consumption |

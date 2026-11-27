@@ -29,7 +29,7 @@ cat config/auth.yaml                         # the generated dashboard key and t
 ```
 
 * `HUB_USER` runs the container as your own user, so that it can write `config/auth.yaml` and
-  `data/`. Without it the container runs as uid 10001: then `chown -R 10001 config data` first.
+  `data/`. Without it the container runs as uid 1000: then `chown -R 1000 config data` first.
   Create `config` and `data` yourself before the first start; Docker would create them as root.
 * The compose file mounts `./config` and `./data` as directories with the `:z` label. The label is
   needed on SELinux hosts (Fedora, RHEL) and harmless elsewhere. Mount **directories**: Docker cannot

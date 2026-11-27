@@ -107,6 +107,11 @@ async def me():
 
 
 # ---- data -------------------------------------------------------------
+def _is_online(request: Request, site_id: str, last_seen: float | None, now: float) -> bool:
+    return (site_id in request.app.state.ingest_conns
+            or (last_seen is not None and now - last_seen < ONLINE_WINDOW))
+
+
 @router.get("/sites", dependencies=[Depends(require_auth)])
 async def sites(request: Request):
     now = time.time()
@@ -117,9 +122,58 @@ async def sites(request: Request):
         seen = s["last_seen"]
         out.append({
             "id": s["id"], "name": s["name"], "last_seen": seen,
-            "online": s["id"] in request.app.state.ingest_conns
-            or (seen is not None and now - seen < ONLINE_WINDOW),
+            "online": _is_online(request, s["id"], seen, now),
             "currency": s["meta"].get("currency", ""),
+        })
+    return out
+
+
+def overview_for_site(model: SiteModel, values: dict[str, list[float]], now: float) -> dict:
+    """Live grid, solar and battery numbers of one site.
+
+    `values` maps entity key -> [ts, value] (see LiveHub.changes). Values older than
+    ONLINE_WINDOW count as missing. A group is None when the site has no fresh value for any of
+    its roles, so the UI can show "–".
+    """
+    def collect(role: str) -> list[float]:
+        found = []
+        for e in model.entities:
+            if e.role != role:
+                continue
+            v = values.get(e.key)
+            if v is not None and now - v[0] < ONLINE_WINDOW:
+                found.append(v[1])
+        return found
+
+    imp, exp = collect("grid_power_import"), collect("grid_power_export")
+    solar, bat, soc = collect("solar_power"), collect("battery_power"), collect("battery_soc")
+
+    grid = None
+    if imp or exp:
+        i, x = sum(imp), sum(exp)
+        grid = {"import_w": i, "export_w": x, "net_w": i - x}
+    return {
+        "grid": grid,
+        "solar": {"power_w": sum(solar)} if solar else None,
+        "battery": ({"power_w": sum(bat) if bat else None,
+                     "soc": sum(soc) / len(soc) if soc else None} if bat or soc else None),
+    }
+
+
+@router.get("/overview", dependencies=[Depends(require_auth)])
+async def overview(request: Request):
+    """Live grid/solar/battery numbers for every configured site."""
+    st = request.app.state
+    now = time.time()
+    out = []
+    for s in await st.db.list_sites():
+        if st.config.site(s["id"]) is None:
+            continue
+        model = await _model(request, s["id"])
+        out.append({
+            "id": s["id"], "name": s["name"], "last_seen": s["last_seen"],
+            "online": _is_online(request, s["id"], s["last_seen"], now),
+            **overview_for_site(model, st.hub.changes(s["id"], 0), now),
         })
     return out
 

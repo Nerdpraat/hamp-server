@@ -359,3 +359,63 @@ def test_static_files_are_revalidated(client):
         assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
     again = client.get("/app.js", headers={"if-none-match": client.get("/app.js").headers["etag"]})
     assert again.status_code == 304            # revalidation is cheap
+
+
+# ---- overview ------------------------------------------------------------------------------------------------
+def _fake_model(*pairs):
+    """A stand-in for SiteModel: overview_for_site only reads `entities` with `key` and `role`."""
+    from types import SimpleNamespace
+    return SimpleNamespace(entities=[SimpleNamespace(key=k, role=r) for k, r in pairs])
+
+
+def test_overview_helper_sums_and_averages():
+    from app.api import overview_for_site
+    now = 1000.0
+    model = _fake_model(("m.pi", "grid_power_import"), ("m.pe", "grid_power_export"),
+                        ("r1.p", "solar_power"), ("r2.p", "solar_power"),
+                        ("b1.p", "battery_power"), ("b1.s", "battery_soc"), ("b2.s", "battery_soc"))
+    values = {"m.pi": [now, 500.0], "m.pe": [now, 120.0], "r1.p": [now, 300.0], "r2.p": [now - 5, 200.0],
+              "b1.p": [now, -250.0], "b1.s": [now, 40.0], "b2.s": [now, 60.0]}
+    out = overview_for_site(model, values, now)
+    assert out["grid"] == {"import_w": 500.0, "export_w": 120.0, "net_w": 380.0}
+    assert out["solar"] == {"power_w": 500.0}
+    assert out["battery"] == {"power_w": -250.0, "soc": 50.0}
+
+
+def test_overview_helper_drops_stale_and_missing():
+    from app.api import ONLINE_WINDOW, overview_for_site
+    now = 10_000.0
+    model = _fake_model(("m.pi", "grid_power_import"), ("r.p", "solar_power"), ("b.s", "battery_soc"))
+    values = {"m.pi": [now - ONLINE_WINDOW - 1, 500.0], "b.s": [now, 80.0]}   # grid stale, solar unseen
+    out = overview_for_site(model, values, now)
+    assert out["grid"] is None and out["solar"] is None
+    assert out["battery"] == {"power_w": None, "soc": 80.0}
+    assert overview_for_site(_fake_model(), {}, now) == {"grid": None, "solar": None, "battery": None}
+
+
+def test_overview_grid_with_import_only_has_zero_export():
+    from app.api import overview_for_site
+    out = overview_for_site(_fake_model(("m.pi", "grid_power_import")), {"m.pi": [5.0, 70.0]}, 5.0)
+    assert out["grid"] == {"import_w": 70.0, "export_w": 0, "net_w": 70.0}
+
+
+def test_overview_requires_auth(client):
+    assert client.get("/api/overview").status_code == 401
+
+
+def test_overview_endpoint_shape(authed):
+    now = time.time()
+    cfg = {"type": "config", "instances": [
+        inst("meter", "electricitymeter", "Meter", power_import=src("pi"), power_export=src("pe")),
+        inst("roof", "solar_inverter", "Roof", power=src("sp")),
+    ]}
+    push(authed, cfg, {"type": "states", "items": [
+        {"key": "meter.power_import", "ts": now, "value": 800.0},
+        {"key": "meter.power_export", "ts": now, "value": 0.0},
+        {"key": "roof.power", "ts": now, "value": 1500.0}]})
+    rows = authed.get("/api/overview").json()
+    home = next(r for r in rows if r["id"] == "home")
+    assert set(home) == {"id", "name", "online", "last_seen", "grid", "solar", "battery"}
+    assert home["grid"]["net_w"] == 800.0
+    assert home["solar"]["power_w"] == 1500.0
+    assert home["battery"] is None

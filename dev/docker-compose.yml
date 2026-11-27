@@ -11,17 +11,17 @@
 name: energy-hub-dev
 
 services:
-  energy-hub:
-    build: ../server
-    ports:
-      - "127.0.0.1:${HUB_PORT:-8000}:8000"
-    environment:
-      LOG_FORMAT: text
-    volumes:
-      # The dev config already contains every secret, so the server has nothing to write: read-only.
-      # ":z" relabels the directory for SELinux hosts and is harmless elsewhere.
-      - ./config:/config:ro,z
-      - hub-data:/data
+#  energy-hub:
+#    build: ../server
+#    ports:
+#      - "127.0.0.1:${HUB_PORT:-8000}:8000"
+#    environment:
+#      LOG_FORMAT: text
+#    volumes:
+#      # The dev config already contains every secret, so the server has nothing to write: read-only.
+#      # ":z" relabels the directory for SELinux hosts and is harmless elsewhere.
+#      - ./config:/config:ro,z
+#      - hub-data:/data
 
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
@@ -44,14 +44,14 @@ services:
   simulator:
     image: python:3.13-slim
     depends_on:
-      energy-hub:
-        condition: service_healthy
+#      energy-hub:
+#        condition: service_healthy
       homeassistant:
         condition: service_healthy
     environment:
       HA_URL: http://homeassistant:8123
-      HUB_URL: http://energy-hub:8000
-      HUB_KEY: dev-key-home-0123456789
+      HUB_URL: https://telemetry.nerdpraat.nl
+      HUB_KEY: Z95BSl8EkgEKhkyEU6ax-hKWpyNmfAoT
       HUB_UI_KEY: dev-dashboard-key
       HUB_SITE: home
       PYTHONUNBUFFERED: "1"

@@ -20,7 +20,7 @@ dashboard that works like Home Assistant's own Energy dashboard, with a site sel
 * **Client** (`client/custom_components/energy_hub`): a Home Assistant integration. It reads your
   energy dashboard, so onboarding needs no entity picking. In its options you add any other device
   from the catalogue: pick the device type, name it, and assign one entity to each sensor slot.
-* **Dashboard**: Summary, Electricity, Gas, Devices and Now (live). Pick the site at the top right
+* **Dashboard**: Overview (all sites at a glance), Summary, Electricity, Gas, Devices and Now (live). Pick the site at the top right
   and the day, week or month at the bottom. While you look at the current period the views update
   themselves when new data arrives and keep your legend selection and scroll position.
 * **Protocol**: [docs/protocol.md](docs/protocol.md). It does not depend on Home Assistant, so you
@@ -83,6 +83,7 @@ energy dashboard.
 
 | Tab | Shows |
 |---|---|
+| Overview | the landing page: one card per site with live grid (net import/export), solar and battery (power and level) numbers, refreshed every 5 s. Click a card to open that site's Summary. Offline sites are greyed out with their last-seen time. A value shows "–" when the site has no fresh sensor for it. Uses the roles `grid_power_import`, `grid_power_export`, `solar_power`, `battery_power` and `battery_soc` |
 | Summary | energy distribution, totals with cost, power sources, electricity, gas |
 | Electricity | import, export, solar, battery, devices, untracked consumption, energy flow |
 | Gas | gas consumption |

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from simulation import SPECS, Sim  # noqa: E402
 
 HA = os.environ.get("HA_URL", "http://homeassistant:8123")
-HUB_URL = os.environ.get("HUB_URL", "http://energy-hub:8000")
+HUB_URL = os.environ.get("HUB_URL", "http://telemetry.nerdpraat.nl")
 HUB_KEY = os.environ["HUB_KEY"]
 HUB_UI_KEY = os.environ["HUB_UI_KEY"]
 HUB_SITE = os.environ.get("HUB_SITE", "home")

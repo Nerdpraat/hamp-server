@@ -80,6 +80,22 @@ table.totals td.name { text-align: left; }
 .now-tiles .tile .n { color: var(--muted); }
 .now-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 24px; }
 
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
+.site-card { cursor: pointer; }
+.site-card:hover, .site-card:focus-visible { border-color: var(--accent); outline: none; }
+.site-card.offline { opacity: .5; }
+.site-card h2 .dot { margin-left: 10px; }
+.site-card .tiles-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.site-card .tile { background: #232323; border-radius: 8px; padding: 10px 12px; }
+.site-card .tile .n { color: var(--muted); }
+.site-card .tile .v { font-size: 22px; margin: 4px 0 2px; }
+.site-card .tile .sub { color: var(--muted); font-size: 12px; min-height: 1.2em; }
+.site-card .tile.grid .v { color: var(--grid); }
+.site-card .tile.solar .v { color: var(--solar); }
+.site-card .tile.battery .v { color: var(--battery-out); }
+.site-card .seen { color: var(--muted); margin-top: 10px; font-size: 12px; }
+@media (max-width: 900px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } }
+
 #datebar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex;
   align-items: center; gap: 10px; background: #1f1f1f; border: 1px solid var(--border);
   border-radius: 12px; padding: 12px 18px; box-shadow: 0 4px 18px rgba(0,0,0,.6); z-index: 6; }

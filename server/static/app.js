@@ -9,12 +9,15 @@ import * as gas from './views/gas.js';
 import * as devices from './views/devices.js';
 import { subscribeLive } from './livefeed.js';
 import { renderNow } from './views/now.js';
+import { renderOverview } from './views/overview.js';
 
 const HISTORY_VIEWS = { summary, electricity, gas, devices };
+const VIEWS = ['overview', 'summary', 'electricity', 'gas', 'devices', 'now'];
+const LIVE_VIEWS = ['overview', 'now'];   // no date bar, no history refresh
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  view: 'summary', site: localStorage.getItem('site'), sites: [],
+  view: 'overview', site: localStorage.getItem('site'), sites: [],
   date: new Date(), mode: localStorage.getItem('mode') || 'day',
 };
 let renderToken = 0;
@@ -46,9 +49,12 @@ $('logout').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- shell
 function route() {
-  const name = location.hash.replace(/^#\//, '') || 'summary';
-  state.view = ['summary', 'electricity', 'gas', 'devices', 'now'].includes(name) ? name : 'summary';
+  const name = location.hash.replace(/^#\//, '') || 'overview';
+  state.view = VIEWS.includes(name) ? name : 'overview';
   for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('active', a.dataset.view === state.view);
+  // The overview covers all sites, so the site selector does not apply there.
+  $('site').hidden = state.view === 'overview';
+  $('site-dot').hidden = state.view === 'overview';
 }
 
 function cleanup() {
@@ -74,7 +80,7 @@ function stopLiveRefresh() {
 
 function startLiveRefresh() {
   stopLiveRefresh();
-  if (state.view === 'now' || !state.site || !isCurrent(state.date, state.mode)) return;
+  if (LIVE_VIEWS.includes(state.view) || !state.site || !isCurrent(state.date, state.mode)) return;
   unsubTrigger = subscribeLive(state.site, scheduleRefresh);
 }
 
@@ -85,7 +91,7 @@ function scheduleRefresh() {
 }
 
 async function silentRefresh() {
-  if (document.hidden || state.view === 'now' || !isCurrent(state.date, state.mode)) return;
+  if (document.hidden || LIVE_VIEWS.includes(state.view) || !isCurrent(state.date, state.mode)) return;
   const token = renderToken;       // a normal render started meanwhile makes this one obsolete
   lastRefresh = Date.now();
   try {
@@ -105,7 +111,7 @@ async function silentRefresh() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && unsubTrigger) scheduleRefresh(); });
 
 function updateDateBar() {
-  const show = state.view !== 'now';
+  const show = !LIVE_VIEWS.includes(state.view);
   $('datebar').hidden = !show;
   if (!show) return;
   $('mode').value = state.mode;
@@ -121,13 +127,20 @@ async function render() {
   const el = $('view');
   el.replaceChildren();
   updateDateBar();
-  if (!state.site) {
+  if (!state.site && state.view !== 'overview') {
     el.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No sites available.' }));
     return;
   }
   el.append(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Loading…' }));
   try {
-    if (state.view === 'now') {
+    if (state.view === 'overview') {
+      const holder = document.createElement('div');
+      el.append(holder);
+      const dispose = await renderOverview(holder, selectSite, stale);
+      if (stale()) { dispose(); return; }
+      disposeLive = dispose;
+      el.querySelector('.loading')?.remove();
+    } else if (state.view === 'now') {
       // Attach first: ECharts needs a laid-out container to measure its size.
       const holder = document.createElement('div');
       el.append(holder);
@@ -170,6 +183,15 @@ async function start() {
   populateSites();
   route();
   await render();
+}
+
+// A card click on the overview: pick the site and open its Summary.
+function selectSite(id) {
+  state.site = id;
+  localStorage.setItem('site', id);
+  $('site').value = id;
+  updateDot();
+  location.hash = '#/summary';   // hashchange routes and renders
 }
 
 $('site').addEventListener('change', (ev) => {

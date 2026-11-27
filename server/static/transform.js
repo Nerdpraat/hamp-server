@@ -193,3 +193,34 @@ export function sensorSummary(sensor, arrays, gauges) {
   const points = (gauges[sensor.key]?.points || []).filter((p) => p[1] !== null && p[1] !== undefined);
   return { label: 'latest', value: points.length ? points.at(-1)[1] : null };
 }
+
+// ---------------------------------------------------------------- overview
+const NEAR_ZERO_W = 5;   // below this a flow is shown as idle
+
+/** Label for the net grid power (import minus export): { sub, w }. `w` is null without data. */
+export function gridLabel(grid) {
+  if (!grid) return { sub: '', w: null };
+  const w = grid.net_w;
+  if (Math.abs(w) < NEAR_ZERO_W) return { sub: 'idle', w: Math.abs(w) };
+  return { sub: w > 0 ? 'importing' : 'exporting', w: Math.abs(w) };
+}
+
+/** Label for the battery (power is positive while discharging): { sub, w, soc }. */
+export function batteryLabel(battery) {
+  if (!battery) return { sub: '', w: null, soc: null };
+  const p = battery.power_w;
+  const soc = battery.soc ?? null;
+  if (p === null || p === undefined) return { sub: '', w: null, soc };
+  if (Math.abs(p) < NEAR_ZERO_W) return { sub: 'idle', w: Math.abs(p), soc };
+  return { sub: p > 0 ? 'discharging' : 'charging', w: Math.abs(p), soc };
+}
+
+/** "5 min ago" style text for a unix timestamp in seconds, or "never". */
+export function lastSeenText(lastSeen, nowSec) {
+  if (lastSeen === null || lastSeen === undefined) return 'never seen';
+  const s = Math.max(0, nowSec - lastSeen);
+  if (s < 60) return 'last seen just now';
+  if (s < 3600) return `last seen ${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `last seen ${Math.floor(s / 3600)} h ago`;
+  return `last seen ${Math.floor(s / 86400)} d ago`;
+}

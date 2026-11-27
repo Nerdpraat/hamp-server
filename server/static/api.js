@@ -27,6 +27,7 @@ export const api = {
   logout: () => request('/api/logout', { method: 'POST' }),
   me: () => request('/api/me'),
   sites: () => request('/api/sites'),
+  overview: () => request('/api/overview'),
   devices: (site) => request(`/api/sites/${encodeURIComponent(site)}/devices`),
   series: (site, startMs, endMs, resolution, keys) => request(
     `/api/sites/${encodeURIComponent(site)}/series?` +

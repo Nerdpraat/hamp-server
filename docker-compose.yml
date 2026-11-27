@@ -21,6 +21,6 @@ services:
       LOG_FORMAT: json
     volumes:
       # ":z" relabels the directories for SELinux hosts (Fedora, RHEL) and is harmless elsewhere.
-      - ./config:/config:z
-      - ./data:/data:z
+      - ${CONFIG_DIR:-./config}:/config:z
+      - ${DATA_DIR:-./data}:/data:z
     stop_grace_period: 20s   # lets the server flush buffered minute buckets on shutdown

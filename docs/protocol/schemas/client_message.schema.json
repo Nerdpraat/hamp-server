@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://energy-hub.invalid/protocol/v2/client_message.schema.json",
+  "title": "any message the client sends",
+  "oneOf": [
+    {"$ref": "config.schema.json"},
+    {"$ref": "states.schema.json"},
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": {"type": {"const": "ping"}}
+    }
+  ]
+}

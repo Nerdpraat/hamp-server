@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://energy-hub.invalid/protocol/v2/error.schema.json",
+  "title": "error (server to client)",
+  "type": "object",
+  "required": ["type", "code", "message"],
+  "properties": {
+    "type": {"const": "error"},
+    "code": {"enum": ["bad_json", "bad_message", "unknown_type", "bad_states", "invalid_config", "rate_limited"]},
+    "message": {"type": "string"},
+    "path": {"type": "string"}
+  }
+}

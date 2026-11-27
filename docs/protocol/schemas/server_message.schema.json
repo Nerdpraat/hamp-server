@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://energy-hub.invalid/protocol/v2/server_message.schema.json",
+  "title": "any message the server sends",
+  "oneOf": [
+    {"$ref": "hello.schema.json"},
+    {"$ref": "ack.schema.json"},
+    {"$ref": "error.schema.json"},
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": {"type": {"const": "pong"}}
+    }
+  ]
+}

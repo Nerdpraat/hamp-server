@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://energy-hub.invalid/protocol/v2/ack.schema.json",
+  "title": "ack (server to client)",
+  "type": "object",
+  "required": ["type", "for"],
+  "properties": {"type": {"const": "ack"}},
+  "oneOf": [
+    {
+      "properties": {
+        "for": {"const": "config"},
+        "instances": {"type": "integer", "minimum": 0},
+        "sensors": {"type": "integer", "minimum": 0},
+        "removed": {
+          "type": "object",
+          "required": ["instances", "sensors"],
+          "properties": {
+            "instances": {"type": "array", "items": {"type": "string"}},
+            "sensors": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      },
+      "required": ["instances", "sensors", "removed"]
+    },
+    {
+      "properties": {
+        "for": {"const": "states"},
+        "accepted": {"type": "integer", "minimum": 0},
+        "rejected": {"type": "integer", "minimum": 0},
+        "unknown_keys": {"type": "array", "maxItems": 20, "items": {"type": "string"}}
+      },
+      "required": ["accepted", "rejected"]
+    }
+  ]
+}

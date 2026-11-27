@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://energy-hub.invalid/protocol/v2/hello.schema.json",
+  "title": "hello (server to client)",
+  "type": "object",
+  "required": ["type", "version", "site", "server_time", "limits", "devices"],
+  "properties": {
+    "type": {"const": "hello"},
+    "version": {"const": 2},
+    "site": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "server_time": {"type": "number"},
+    "limits": {
+      "type": "object",
+      "required": ["max_message_bytes", "max_items_per_batch", "max_messages_per_second", "max_instances"],
+      "properties": {
+        "max_message_bytes": {"type": "integer", "minimum": 1},
+        "max_items_per_batch": {"type": "integer", "minimum": 1},
+        "max_messages_per_second": {"type": "integer", "minimum": 1},
+        "max_instances": {"type": "integer", "minimum": 1}
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/device"}
+    }
+  },
+  "$defs": {
+    "device": {
+      "type": "object",
+      "required": ["id", "name", "description", "category", "sensors"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "category": {"type": "string"},
+        "sensors": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sensor"}}
+      }
+    },
+    "sensor": {
+      "type": "object",
+      "required": ["id", "name", "description", "kind", "unit", "allow_fixed", "selector"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "kind": {"enum": ["counter", "gauge"]},
+        "unit": {"type": "string"},
+        "allow_fixed": {"type": "boolean"},
+        "selector": {
+          "type": "object",
+          "required": ["domain"],
+          "properties": {
+            "domain": {"type": "array", "items": {"type": "string"}},
+            "device_class": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}

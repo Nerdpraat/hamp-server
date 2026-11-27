@@ -1,0 +1,36 @@
+{
+  "title": "The connection drops, the client reconnects, repeats config, and flushes what it buffered",
+  "steps": [
+    {"direction": "server->client", "note": "connection lost (network, server restart)"},
+    {"direction": "client->server", "note": "client keeps the latest value per key in a bounded buffer, waits 1 s (+ jitter), reconnects"},
+    {"direction": "server->client", "message": {
+      "type": "hello", "version": 2,
+      "site": {"id": "dru05", "name": "DRU05"},
+      "server_time": 1795805231.9,
+      "limits": {"max_message_bytes": 262144, "max_items_per_batch": 1000,
+                 "max_messages_per_second": 100, "max_instances": 100},
+      "devices": [
+        {"id": "gasmeter", "name": "Gas Meter", "description": "Main gas utility meter.", "category": "utilities",
+         "sensors": [
+           {"id": "consumption", "name": "Gas Consumption", "description": "Total gas consumed.",
+            "kind": "counter", "unit": "m3", "allow_fixed": false,
+            "selector": {"domain": ["sensor"], "device_class": ["gas"]}}
+         ]}
+      ]}},
+    {"direction": "client->server", "note": "config is always the first message after a reconnect"},
+    {"direction": "client->server", "message": {
+      "type": "config", "currency": "EUR",
+      "instances": [
+        {"id": "gas-meter", "device": "gasmeter", "name": "Gas",
+         "sensors": {"consumption": {"source": "sensor.gas_total"}}}
+      ]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "config", "instances": 1, "sensors": 1,
+      "removed": {"instances": [], "sensors": []}}},
+    {"direction": "client->server", "note": "only then the buffered readings, oldest first"},
+    {"direction": "client->server", "message": {
+      "type": "states", "items": [{"key": "gas-meter.consumption", "ts": 1795805221.0, "value": 5123.41}]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "states", "accepted": 1, "rejected": 0}}
+  ]
+}

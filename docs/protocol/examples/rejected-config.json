@@ -1,0 +1,18 @@
+{
+  "title": "A config the server rejects: the previous config stays in force and the connection stays open",
+  "steps": [
+    {"direction": "client->server", "message": {
+      "type": "config",
+      "instances": [
+        {"id": "battery-1", "device": "battery", "name": "Battery 1",
+         "sensors": {"flux_capacitor": {"source": "sensor.x"}}}
+      ]}},
+    {"direction": "server->client", "message": {
+      "type": "error", "code": "invalid_config",
+      "message": "unknown sensor 'flux_capacitor' for device 'battery'",
+      "path": "instances[0].sensors.flux_capacitor"}},
+    {"direction": "client->server", "message": {"type": "states", "items": []}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "states", "accepted": 0, "rejected": 0}}
+  ]
+}

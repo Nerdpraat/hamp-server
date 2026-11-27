@@ -1,0 +1,61 @@
+{
+  "title": "Connect, declare two device instances, send readings",
+  "steps": [
+    {"direction": "client->server", "note": "WebSocket handshake with header 'Authorization: Bearer <site key>'"},
+    {"direction": "server->client", "message": {
+      "type": "hello", "version": 2,
+      "site": {"id": "dru05", "name": "DRU05"},
+      "server_time": 1795805160.2,
+      "limits": {"max_message_bytes": 262144, "max_items_per_batch": 1000,
+                 "max_messages_per_second": 100, "max_instances": 100},
+      "devices": [
+        {"id": "battery", "name": "Battery", "description": "Home battery storage level and charge/discharge flow.",
+         "category": "energy",
+         "sensors": [
+           {"id": "state_of_charge", "name": "State of Charge", "description": "Current battery percentage.",
+            "kind": "gauge", "unit": "%", "allow_fixed": false,
+            "selector": {"domain": ["sensor"], "device_class": ["battery"]}},
+           {"id": "power", "name": "Power", "description": "Current charging or discharging power.",
+            "kind": "gauge", "unit": "W", "allow_fixed": false,
+            "selector": {"domain": ["sensor"], "device_class": ["power"]}},
+           {"id": "energy_charged", "name": "Energy Charged", "description": "Total energy stored into the battery.",
+            "kind": "counter", "unit": "kWh", "allow_fixed": false,
+            "selector": {"domain": ["sensor"], "device_class": ["energy"]}}
+         ]},
+        {"id": "electricitymeter", "name": "Electricity Meter", "description": "Smart meter grid import and export.",
+         "category": "utilities",
+         "sensors": [
+           {"id": "energy_import", "name": "Energy Import", "description": "Total energy imported from the grid.",
+            "kind": "counter", "unit": "kWh", "allow_fixed": false,
+            "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
+           {"id": "price_import", "name": "Price Import", "description": "Price of imported energy.",
+            "kind": "gauge", "unit": "/kWh", "allow_fixed": true,
+            "selector": {"domain": ["sensor"]}}
+         ]}
+      ]}},
+    {"direction": "client->server", "message": {
+      "type": "config", "currency": "EUR",
+      "instances": [
+        {"id": "battery-1", "device": "battery", "name": "Battery 1",
+         "sensors": {"state_of_charge": {"source": "sensor.b1_soc"},
+                     "power": {"source": "sensor.b1_power"},
+                     "energy_charged": {"source": "sensor.b1_in"}}},
+        {"id": "electricity-meter", "device": "electricitymeter", "name": "Electricity Meter",
+         "sensors": {"energy_import": {"source": "sensor.p1_import"},
+                     "price_import": {"fixed": 0.25}}}
+      ]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "config", "instances": 2, "sensors": 5,
+      "removed": {"instances": [], "sensors": []}}},
+    {"direction": "client->server", "message": {
+      "type": "states", "items": [
+        {"key": "battery-1.state_of_charge", "ts": 1795805161.0, "value": 62.5},
+        {"key": "battery-1.power", "ts": 1795805161.0, "value": -1234.5},
+        {"key": "battery-1.energy_charged", "ts": 1795805161.0, "value": 412.307},
+        {"key": "electricity-meter.energy_import", "ts": 1795805161.0, "value": 1092.84}]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "states", "accepted": 4, "rejected": 0}},
+    {"direction": "client->server", "message": {"type": "ping"}},
+    {"direction": "server->client", "message": {"type": "pong"}}
+  ]
+}

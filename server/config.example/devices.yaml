@@ -114,6 +114,11 @@ devices:
           domain: sensor
           device_class: energy
 
+      - id: capacity
+        name: "Capacity"
+        description: "Usable battery capacity in kWh, entered as a fixed number."
+        role: battery_capacity
+
   - id: gasmeter
     name: "Gas Meter"
     description: "Main gas utility meter."

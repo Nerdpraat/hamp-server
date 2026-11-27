@@ -86,8 +86,12 @@ A role tells the dashboard what a sensor means. Roles are fixed in the server co
 | `battery_power` | gauge | W | | positive while discharging |
 | `battery_soc` | gauge | % | | battery level (the mean over all batteries is shown) |
 | `device_power` | gauge | W | | device power |
+| `battery_capacity` | gauge | kWh | | usable battery capacity; fixed number only, used to compute stored energy |
 | `price_import`, `price_export` | gauge | /kWh | | price slots, see below |
 | `price_gas` | gauge | /m3 | | price slot |
+
+Existing deployments must add the `capacity` slot (id `capacity`, role `battery_capacity`) to the
+battery device in their own `devices.yaml`. The shipped example already has it.
 
 ### Price slots and cost
 

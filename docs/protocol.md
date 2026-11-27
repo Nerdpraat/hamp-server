@@ -67,7 +67,10 @@ client -> config           at any time: replaces the previous config
        "selector": {"domain": ["sensor"], "device_class": ["battery"]}},
       {"id": "energy_charged", "name": "Energy Charged", "description": "Total energy stored into the battery.",
        "kind": "counter", "unit": "kWh", "allow_fixed": false,
-       "selector": {"domain": ["sensor"], "device_class": ["energy"]}}
+       "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
+      {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in kWh, entered as a fixed number.",
+       "kind": "gauge", "unit": "kWh", "allow_fixed": true, "fixed_only": true,
+       "selector": {"domain": ["sensor"]}}
     ]}
  ]}
 ```
@@ -82,6 +85,8 @@ client -> config           at any time: replaces the previous config
 * `selector`: a hint for building a picker. `domain` and `device_class` use Home Assistant's names.
   Other clients MAY ignore it.
 * `allow_fixed`: the slot may be given a constant number instead of a source (used for prices).
+* `fixed_only` (optional, default `false`): the slot takes only a fixed number, never a source.
+  Clients should show only a number field. A missing flag means `false`.
 * `server_time` (Unix seconds) lets a client notice clock skew.
 
 ### `ack`
@@ -151,6 +156,7 @@ Replaces everything the server knew about this site.
   `limits.max_instances` in total. Each instance has at least one sensor.
 * **Sensor entry.** The key is a sensor `id` of that device. The value is
   `{"source": "<opaque string>"}` or, only when the slot has `allow_fixed`, `{"fixed": <number ≥ 0>}`.
+  A `fixed_only` slot rejects `source` and needs `fixed` > 0.
   `source` says where the value comes from (Home Assistant clients send the entity id). It is stored
   but never shown in the dashboard. The same `source` may fill several sensors. A slot that has no
   entry simply has no data.

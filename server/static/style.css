@@ -22,14 +22,30 @@ button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 
-#topbar { display: flex; align-items: center; justify-content: space-between;
-  height: 53px; padding: 0 12px; border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; background: var(--bg); z-index: 5; }
-#tabs { display: flex; height: 100%; }
-#tabs a { display: flex; align-items: center; padding: 0 16px; color: var(--muted);
-  text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
+#topbar { border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--bg); z-index: 5; }
+#topbar .row1 { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; height: 48px; padding: 0 16px; }
+.crumb { display: flex; align-items: center; gap: 10px; font-size: 16px; min-width: 0; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb a[aria-current="page"] { color: var(--text); font-weight: 500; }
+.crumb .chev { color: var(--muted); }
+.crumb-site { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.crumb select { font-size: 15px; font-weight: 600; background: transparent;
+  border-color: transparent; padding: 4px 6px; min-width: 0; }
+.crumb select:hover { border-color: var(--border); }
+/* The select itself is transparent, so Chrome on Linux draws the popup white with light text.
+   Give the popup an explicit dark background. */
+.crumb select { color-scheme: dark; }
+.crumb select option { background: #262626; color: var(--text); }
+.crumb a:focus-visible, .crumb select:focus-visible, #logout:focus-visible,
+#tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#tabs { display: flex; height: 40px; padding: 0 12px; background: #161616;
+  border-top: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+#tabs::-webkit-scrollbar { display: none; }
+#tabs a { display: flex; align-items: center; flex-shrink: 0; white-space: nowrap; padding: 0 16px;
+  color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
 #tabs a.active { color: var(--text); border-bottom-color: var(--text); }
-#topbar .right { display: flex; align-items: center; gap: 8px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #666; display: inline-block; }
 .dot.online { background: #43a047; }
 
@@ -83,17 +99,26 @@ table.totals td.name { text-align: left; }
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
 .site-card { cursor: pointer; }
 .site-card:hover, .site-card:focus-visible { border-color: var(--accent); outline: none; }
-.site-card.offline { opacity: .5; }
-.site-card h2 .dot { margin-left: 10px; }
+.site-card.offline .name, .site-card.offline .tiles-row { opacity: .5; }
+.site-card.total { grid-column: 1 / -1; cursor: default; }
+.site-card.total:hover { border-color: var(--border); }
+.site-card.total { padding: 6px 12px; display: flex; align-items: center; gap: 16px; }
+.site-card.total h2 { font-size: 14px; margin: 0; white-space: nowrap; }
+.site-card.total .tiles-row { flex: 1; gap: 8px; }
+.site-card.total .tile { padding: 2px 8px; display: flex; align-items: baseline; gap: 8px; background: transparent; }
+.site-card.total .tile .v { font-size: 16px; margin: 0; }
+.site-card.total .tile .n, .site-card.total .tile .sub { font-size: 11px; min-height: 0; }
+.site-card h2 .dot { margin-left: 10px; background: #e53935; }
+.site-card h2 .dot.online { background: #43a047; }
 .site-card .tiles-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .site-card .tile { background: #232323; border-radius: 8px; padding: 10px 12px; }
 .site-card .tile .n { color: var(--muted); }
 .site-card .tile .v { font-size: 22px; margin: 4px 0 2px; }
 .site-card .tile .sub { color: var(--muted); font-size: 12px; min-height: 1.2em; }
 .site-card .tile.grid .v { color: var(--grid); }
+.site-card .tile.grid.export .v { color: var(--export); }
 .site-card .tile.solar .v { color: var(--solar); }
 .site-card .tile.battery .v { color: var(--battery-out); }
-.site-card .seen { color: var(--muted); margin-top: 10px; font-size: 12px; }
 @media (max-width: 900px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } }
 
 #datebar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex;

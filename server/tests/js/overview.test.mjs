@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gridLabel, batteryLabel, lastSeenText } from '../../static/transform.js';
+import { gridLabel, batteryLabel, connectionTitle, sumSites } from '../../static/transform.js';
 
 test('gridLabel shows direction and magnitude', () => {
   assert.deepEqual(gridLabel(null), { sub: '', w: null });
@@ -17,10 +17,27 @@ test('batteryLabel: positive power discharges, negative charges', () => {
   assert.deepEqual(batteryLabel({ power_w: null, soc: 80 }), { sub: '', w: null, soc: 80 });
 });
 
-test('lastSeenText', () => {
-  assert.equal(lastSeenText(null, 1000), 'never seen');
-  assert.equal(lastSeenText(990, 1000), 'last seen just now');
-  assert.equal(lastSeenText(1000 - 300, 1000), 'last seen 5 min ago');
-  assert.equal(lastSeenText(1000 - 7200, 1000), 'last seen 2 h ago');
-  assert.equal(lastSeenText(1000 - 3 * 86400, 1000), 'last seen 3 d ago');
+test('connectionTitle', () => {
+  assert.equal(connectionTitle(true, 5), 'connected');
+  assert.equal(connectionTitle(false, null), 'disconnected, never connected');
+  assert.equal(connectionTitle(false, undefined), 'disconnected, never connected');
+  assert.equal(connectionTitle(false, 1000), `disconnected, last connected ${new Date(1_000_000).toLocaleString()}`);
+});
+
+test('sumSites adds groups and skips missing ones', () => {
+  const sites = [
+    { grid: { import_w: 500, export_w: 0, net_w: 500 }, solar: { power_w: 100 }, battery: { power_w: -200, soc: 40 } },
+    { grid: { import_w: 0, export_w: 900, net_w: -900 }, solar: null, battery: { power_w: null, soc: 80 } },
+    { grid: null, solar: { power_w: 50 }, battery: null },
+  ];
+  assert.deepEqual(sumSites(sites), {
+    grid: { import_w: 500, export_w: 900, net_w: -400 },
+    solar: { power_w: 150 },
+    battery: { power_w: -200, soc: 60 },
+  });
+});
+
+test('sumSites with no data', () => {
+  assert.deepEqual(sumSites([]), { grid: null, solar: null, battery: null });
+  assert.deepEqual(sumSites([{ grid: null, solar: null, battery: null }]), { grid: null, solar: null, battery: null });
 });

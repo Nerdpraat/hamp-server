@@ -52,9 +52,14 @@ function route() {
   const name = location.hash.replace(/^#\//, '') || 'overview';
   state.view = VIEWS.includes(name) ? name : 'overview';
   for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('active', a.dataset.view === state.view);
-  // The overview covers all sites, so the site selector does not apply there.
-  $('site').hidden = state.view === 'overview';
-  $('site-dot').hidden = state.view === 'overview';
+  // The overview covers all sites: show only "All sites". Site views add the site selector
+  // to the breadcrumb and show the tab row.
+  const overview = state.view === 'overview';
+  $('crumb-sep').hidden = overview;
+  $('crumb-site').hidden = overview;
+  $('tabs').hidden = overview;
+  if (overview) $('crumb-all').setAttribute('aria-current', 'page');
+  else $('crumb-all').removeAttribute('aria-current');
 }
 
 function cleanup() {

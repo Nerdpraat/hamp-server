@@ -50,6 +50,13 @@ devices:
           domain: sensor
           device_class: temperature
 
+      - id: outside_temp
+        name: "Outside Temperature"
+        description: "Temperature outside the building"
+        selector:
+          domain: sensor
+          device_class: temperature
+
       - id: cop
         name: "COP"
         description: "Current Coefficient of Performance."
@@ -113,6 +120,13 @@ devices:
         selector:
           domain: sensor
           device_class: energy
+
+      - id: temperature
+        name: "Temperature"
+        description: "Internal battery temperature"
+        selector:
+          domain: sensor
+          device_class: temperature
 
   - id: gasmeter
     name: "Gas Meter"
@@ -225,3 +239,30 @@ devices:
         selector:
           domain: sensor
           device_class: energy
+
+  - id: water_heater
+    name: "Water Heater"
+    description: "Electric water heater"
+    sensors:
+      - id: power
+        name: "Power"
+        description: "Current electrical consumption."
+        role: device_power
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy
+        name: "Energy"
+        description: "Total electrical energy consumed."
+        role: device_energy
+        selector:
+          domain: sensor
+          device_class: energy
+
+      - id: water_temp
+        name: "Water Temperature"
+        description: "Temperature of the water in the tank."
+        selector:
+          domain: sensor
+          device_class: temperature

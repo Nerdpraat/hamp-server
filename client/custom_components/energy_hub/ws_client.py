@@ -248,6 +248,8 @@ class Forwarder:
                     _LOGGER.warning("device %r has no sensor %r on this server; skipping it", inst["device"], sid)
                 elif "fixed" in entry and not slot["allow_fixed"]:
                     _LOGGER.warning("%s.%s does not accept a fixed value; skipping it", inst["id"], sid)
+                elif slot.get("fixed_only") and "source" in entry:
+                    _LOGGER.warning("%s.%s takes only a fixed value; skipping it", inst["id"], sid)
                 else:
                     sensors[sid] = entry
             if sensors:

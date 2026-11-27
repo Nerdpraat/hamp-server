@@ -47,10 +47,14 @@ def sensor_schema(device: dict[str, Any]) -> dict[vol.Marker, Any]:
     field *name* is the slot's name; price slots get a second field for a fixed number."""
     fields: dict[vol.Marker, Any] = {}
     for s in device["sensors"]:
-        fields[vol.Optional(s["name"])] = EntitySelector(_selector_config(s))
-        if s["allow_fixed"]:
-            fields[vol.Optional(s["name"] + FIXED_SUFFIX)] = NumberSelector(
-                NumberSelectorConfig(min=0, max=1000, step="any", mode=NumberSelectorMode.BOX))
+        fixed_only = bool(s.get("fixed_only"))
+        if not fixed_only:
+            fields[vol.Optional(s["name"])] = EntitySelector(_selector_config(s))
+        if s["allow_fixed"] or fixed_only:
+            number: dict[str, Any] = {"min": 0, "max": 1000, "step": "any", "mode": NumberSelectorMode.BOX}
+            if fixed_only and s.get("unit"):
+                number["unit_of_measurement"] = s["unit"]
+            fields[vol.Optional(s["name"] + FIXED_SUFFIX)] = NumberSelector(NumberSelectorConfig(**number))
     return fields
 
 
@@ -74,7 +78,7 @@ def slots_from_input(hass: HomeAssistant, device: dict[str, Any], user_input: di
     slots: list[Slot] = []
     errors: dict[str, str] = {}
     for s in device["sensors"]:
-        entity = user_input.get(s["name"])
+        entity = None if s.get("fixed_only") else user_input.get(s["name"])
         fixed = user_input.get(s["name"] + FIXED_SUFFIX)
         if entity and fixed is not None:
             errors[s["name"] + FIXED_SUFFIX] = "entity_and_fixed"
@@ -98,7 +102,8 @@ def suggested_values(device: dict[str, Any], instance: InstanceDef) -> dict[str,
         if sensor is None:
             continue
         if slot.entity_id is not None:
-            out[sensor["name"]] = slot.entity_id
+            if not sensor.get("fixed_only"):
+                out[sensor["name"]] = slot.entity_id
         else:
             out[sensor["name"] + FIXED_SUFFIX] = slot.fixed
     return out

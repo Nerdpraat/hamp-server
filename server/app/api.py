@@ -135,18 +135,20 @@ def overview_for_site(model: SiteModel, values: dict[str, list[float]], now: flo
     ONLINE_WINDOW count as missing. A group is None when the site has no fresh value for any of
     its roles, so the UI can show "–".
     """
+    def fresh(e) -> float | None:
+        v = values.get(e.key)
+        return v[1] if v is not None and now - v[0] < ONLINE_WINDOW else None
+
     def collect(role: str) -> list[float]:
-        found = []
-        for e in model.entities:
-            if e.role != role:
-                continue
-            v = values.get(e.key)
-            if v is not None and now - v[0] < ONLINE_WINDOW:
-                found.append(v[1])
-        return found
+        return [v for e in model.entities if e.role == role and (v := fresh(e)) is not None]
 
     imp, exp = collect("grid_power_import"), collect("grid_power_export")
     solar, bat, soc = collect("solar_power"), collect("battery_power"), collect("battery_soc")
+
+    capacity = {f.instance: f.value for f in model.fixed
+                if f.sensor.role == "battery_capacity" and f.value > 0}
+    stored = [calc.stored_kwh(v, capacity[e.instance]) for e in model.entities
+              if e.role == "battery_soc" and e.instance in capacity and (v := fresh(e)) is not None]
 
     grid = None
     if imp or exp:
@@ -156,7 +158,9 @@ def overview_for_site(model: SiteModel, values: dict[str, list[float]], now: flo
         "grid": grid,
         "solar": {"power_w": sum(solar)} if solar else None,
         "battery": ({"power_w": sum(bat) if bat else None,
-                     "soc": sum(soc) / len(soc) if soc else None} if bat or soc else None),
+                     "soc": sum(soc) / len(soc) if soc else None,
+                     "soc_n": len(soc),
+                     "stored_kwh": sum(stored) if stored else None} if bat or soc else None),
     }
 
 

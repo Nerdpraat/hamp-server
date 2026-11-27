@@ -1,5 +1,5 @@
 import {
-  h, balanceCard, devicesBarCard, devicesDetailCard, distributionCard, electricityCard,
+  h, balanceCard, batteryStoredCard, devicesBarCard, devicesDetailCard, distributionCard, electricityCard,
   gaugeTiles, sankeyCard, solarCard, totalsCard,
 } from '../cards.js';
 
@@ -14,6 +14,7 @@ export function render(el, d) {
 
   electricityCard(left, d);
   solarCard(left, d);
+  batteryStoredCard(left, d);
   totalsCard(left, d);
   devicesDetailCard(left, d);
   devicesBarCard(left, d);

@@ -205,14 +205,15 @@ export function gridLabel(grid) {
   return { sub: w > 0 ? 'importing' : 'exporting', w: Math.abs(w) };
 }
 
-/** Label for the battery (power is positive while discharging): { sub, w, soc }. */
+/** Label for the battery (power is positive while discharging): { sub, w, soc, stored }. */
 export function batteryLabel(battery) {
-  if (!battery) return { sub: '', w: null, soc: null };
+  if (!battery) return { sub: '', w: null, soc: null, stored: null };
   const p = battery.power_w;
   const soc = battery.soc ?? null;
-  if (p === null || p === undefined) return { sub: '', w: null, soc };
-  if (Math.abs(p) < NEAR_ZERO_W) return { sub: 'idle', w: Math.abs(p), soc };
-  return { sub: p > 0 ? 'discharging' : 'charging', w: Math.abs(p), soc };
+  const stored = battery.stored_kwh ?? null;
+  if (p === null || p === undefined) return { sub: '', w: null, soc, stored };
+  if (Math.abs(p) < NEAR_ZERO_W) return { sub: 'idle', w: Math.abs(p), soc, stored };
+  return { sub: p > 0 ? 'discharging' : 'charging', w: Math.abs(p), soc, stored };
 }
 
 /** Hover text of the connection dot. `lastSeen` is a unix timestamp in seconds or null. */
@@ -229,7 +230,10 @@ export function sumSites(sites) {
   const solars = sites.map((s) => s.solar?.power_w).filter((v) => v !== null && v !== undefined);
   const bats = sites.map((s) => s.battery).filter(Boolean);
   const powers = bats.map((b) => b.power_w).filter((v) => v !== null && v !== undefined);
-  const socs = bats.map((b) => b.soc).filter((v) => v !== null && v !== undefined);
+  const socs = bats.filter((b) => b.soc !== null && b.soc !== undefined)
+    .map((b) => ({ soc: b.soc, n: b.soc_n ?? 1 }));
+  const socN = sum(socs.map((x) => x.n));
+  const stored = bats.map((b) => b.stored_kwh).filter((v) => v !== null && v !== undefined);
   return {
     grid: grids.length ? {
       import_w: sum(grids.map((g) => g.import_w)), export_w: sum(grids.map((g) => g.export_w)),
@@ -238,7 +242,46 @@ export function sumSites(sites) {
     solar: solars.length ? { power_w: sum(solars) } : null,
     battery: bats.length ? {
       power_w: powers.length ? sum(powers) : null,
-      soc: socs.length ? sum(socs) / socs.length : null,
+      soc: socN > 0 ? sum(socs.map((x) => x.soc * x.n)) / socN : null,
+      soc_n: socN,
+      stored_kwh: stored.length ? sum(stored) : null,
     } : null,
   };
+}
+
+/** Stored energy in kWh from a state of charge in % and a capacity in kWh; null when unknown or invalid. */
+export function storedEnergy(soc, capacity) {
+  const ok = (v) => v !== null && v !== undefined && !Number.isNaN(v);
+  if (!ok(soc) || !ok(capacity) || capacity <= 0) return null;
+  return (soc / 100) * capacity;
+}
+
+/**
+ * Batteries that have both a state-of-charge entity and a fixed capacity > 0:
+ * [{id, name, socKey, capacity}]. Instances lacking either are omitted.
+ */
+export function batteriesWithCapacity(instances) {
+  const out = [];
+  for (const inst of instances || []) {
+    const sensors = inst.sensors || [];
+    const soc = sensors.find((s) => s.role === 'battery_soc' && s.key);
+    const cap = sensors.find((s) => s.role === 'battery_capacity' && Number(s.fixed) > 0);
+    if (soc && cap) out.push({ id: inst.id, name: inst.name, socKey: soc.key, capacity: Number(cap.fixed) });
+  }
+  return out;
+}
+
+/**
+ * Stored energy over time per battery: [{name, data: [[ts, kWh|null], ...]}].
+ * `gauges` is key -> {points: [[ts, avg, min, max]]}. Null points stay null (gaps in the chart).
+ * A battery whose SOC series is absent from `gauges` is omitted.
+ */
+export function storedSeries(instances, gauges) {
+  const out = [];
+  for (const b of batteriesWithCapacity(instances)) {
+    const points = gauges?.[b.socKey]?.points;
+    if (!points) continue;
+    out.push({ name: b.name, data: points.map((p) => [p[0], storedEnergy(p[1], b.capacity)]) });
+  }
+  return out;
 }

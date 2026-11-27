@@ -55,3 +55,8 @@ def test_cost_variable_forward_fill():
 
 def test_cost_without_price_is_none():
     assert calc.cost_for([(0, 1.0)], []) is None
+
+
+def test_stored_kwh():
+    assert calc.stored_kwh(50, 10) == pytest.approx(5.0)
+    assert calc.stored_kwh(0, 10) == 0 and calc.stored_kwh(100, 13.5) == pytest.approx(13.5)

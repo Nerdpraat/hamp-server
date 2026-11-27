@@ -20,7 +20,10 @@
             "selector": {"domain": ["sensor"], "device_class": ["power"]}},
            {"id": "energy_charged", "name": "Energy Charged", "description": "Total energy stored into the battery.",
             "kind": "counter", "unit": "kWh", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["energy"]}}
+            "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
+           {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in kWh, entered as a fixed number.",
+            "kind": "gauge", "unit": "kWh", "allow_fixed": true, "fixed_only": true,
+            "selector": {"domain": ["sensor"]}}
          ]},
         {"id": "electricitymeter", "name": "Electricity Meter", "description": "Smart meter grid import and export.",
          "category": "utilities",

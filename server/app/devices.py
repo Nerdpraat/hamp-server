@@ -31,6 +31,7 @@ class RoleSpec:
     group: str = "other"
     price: bool = False            # a price slot: may be a fixed number
     dashboard: bool = True         # False: only shown in the generic Devices tab
+    fixed_only: bool = False       # slot takes only a fixed number, never a source
 
 
 _ROLE_LIST = [
@@ -47,6 +48,8 @@ _ROLE_LIST = [
     RoleSpec("solar_power", "gauge", "W", 1, "#ff9800", "Solar power", "power"),
     RoleSpec("battery_power", "gauge", "W", 1, "#4db6ac", "Battery power", "power"),
     RoleSpec("battery_soc", "gauge", "%", 1, None, "Battery level", "battery_state"),
+    RoleSpec("battery_capacity", "gauge", "kWh", 1, None, "Battery capacity", "battery_capacity",
+             fixed_only=True),
     RoleSpec("device_power", "gauge", "W", 1, None, "Device power", "device_power"),
     RoleSpec("price_import", "gauge", "/kWh", 1, None, "Import price", "price", price=True),
     RoleSpec("price_export", "gauge", "/kWh", 1, None, "Export price", "price", price=True),
@@ -167,6 +170,7 @@ class ResolvedSensor:
     sign: int
     color: str | None
     allow_fixed: bool
+    fixed_only: bool
 
     @property
     def group(self) -> str:
@@ -186,8 +190,10 @@ def _resolve(device: DeviceDef, s: SensorDef) -> ResolvedSensor:
     unit = s.unit if s.unit is not None else (role.unit if role else (class_unit or ""))
     sign = s.sign if s.sign is not None else (role.sign if role else 1)
     color = s.color or (role.color if role else None)
+    fixed_only = bool(role and role.fixed_only)
+    allow_fixed = bool(role and (role.price or role.fixed_only))
     return ResolvedSensor(device.id, s.id, s.name, s.description, s.selector, s.role,
-                          kind, unit, sign, color, bool(role and role.price))
+                          kind, unit, sign, color, allow_fixed, fixed_only)
 
 
 class Catalogue(BaseModel):
@@ -232,6 +238,7 @@ class Catalogue(BaseModel):
                 sensors.append({
                     "id": rs.id, "name": rs.name, "description": rs.description,
                     "kind": rs.kind, "unit": rs.unit, "allow_fixed": rs.allow_fixed,
+                    "fixed_only": rs.fixed_only,
                     "selector": selector,
                 })
             out.append({"id": d.id, "name": d.name, "description": d.description,

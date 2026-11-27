@@ -53,6 +53,7 @@
         "kind": {"enum": ["counter", "gauge"]},
         "unit": {"type": "string"},
         "allow_fixed": {"type": "boolean"},
+        "fixed_only": {"type": "boolean"},
         "selector": {
           "type": "object",
           "required": ["domain"],

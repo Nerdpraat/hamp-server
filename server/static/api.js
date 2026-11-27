@@ -39,6 +39,11 @@ export const api = {
   live: (site) => request(`/api/sites/${encodeURIComponent(site)}/live`),
 };
 
+export function overviewSocketUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/ws/overview`;
+}
+
 export function liveSocketUrl(site) {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${location.host}/ws/live?site=${encodeURIComponent(site)}`;

@@ -1,0 +1,66 @@
+# Local test stack: Home Assistant + Energy Hub server + a simulator that sets everything up.
+#
+#   cd dev && docker compose up --build
+#
+# Then open:
+#   Home Assistant  http://localhost:8123   (user: dev  password: dev)
+#   Energy Hub      http://localhost:8000   (access key: dev-dashboard-key)
+#
+# Other ports (when 8000 or 8123 are taken):  HUB_PORT=18000 HA_PORT=18123 docker compose up
+# Reset everything:  docker compose down -v
+name: energy-hub-dev
+
+services:
+  energy-hub:
+    build: ../server
+    ports:
+      - "127.0.0.1:${HUB_PORT:-8000}:8000"
+    environment:
+      LOG_FORMAT: text
+    volumes:
+      # The dev config already contains every secret, so the server has nothing to write: read-only.
+      # ":z" relabels the directory for SELinux hosts and is harmless elsewhere.
+      - ./config:/config:ro,z
+      - hub-data:/data
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    ports:
+      - "127.0.0.1:${HA_PORT:-8123}:8123"
+    volumes:
+      - ha-config:/config
+      - ./ha-configuration.yaml:/config/configuration.yaml:ro,z
+      # the integration under test, straight from the repo: edit, then `docker compose restart homeassistant`
+      - ../client/custom_components/energy_hub:/config/custom_components/energy_hub:ro,z
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8123/manifest.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Creates the HA user and demo sensors, fills the energy dashboard, adds the Energy Hub integration,
+  # adds a heat pump and a water meter through the options flow, then feeds the sensors once a second.
+  simulator:
+    image: python:3.13-slim
+    depends_on:
+      energy-hub:
+        condition: service_healthy
+      homeassistant:
+        condition: service_healthy
+    environment:
+      HA_URL: http://homeassistant:8123
+      HUB_URL: http://energy-hub:8000
+      HUB_KEY: dev-key-home-0123456789
+      HUB_UI_KEY: dev-dashboard-key
+      HUB_SITE: home
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./ha_sim.py:/sim/ha_sim.py:ro,z
+      - ../tools/simulation.py:/sim/simulation.py:ro,z
+    command: sh -c "pip install -q --no-cache-dir aiohttp && python /sim/ha_sim.py"
+    restart: on-failure
+
+volumes:
+  hub-data:
+  ha-config:

@@ -1,0 +1,14 @@
+# auth.yaml: every secret of this server lives in this file. Keep it private.
+# Leave a value empty ("") and the server generates a random one when it starts and writes it here.
+#
+#   ui_key          the shared key you type to open the dashboard
+#   session_secret  signs the dashboard session cookies (changing it logs everybody out)
+#   keys            one key per site, referenced by name from topology.yaml. Give a site's key to
+#                   the Home Assistant integration (or any other client) of that site.
+ui_key: ""
+session_secret: ""
+keys:
+  key-dru05-ha: ""
+  key-dru06-ha: ""
+  key-dru07-ha: ""
+  key-dru08-ha: ""

@@ -1,0 +1,26 @@
+# Energy Hub server.
+#
+#   mkdir -p config data
+#   cp server/config.example/* config/          # then edit topology.yaml and devices.yaml
+#   HUB_USER=$(id -u):$(id -g) docker compose up -d --build
+#
+# The server writes generated secrets into config/auth.yaml, so ./config must be writable by the
+# user the container runs as. HUB_USER (your own uid:gid) makes that the same user that owns the
+# directories. See docs/deployment.md.
+services:
+  energy-hub:
+    build: ./server
+    restart: unless-stopped
+    user: "${HUB_USER:-10001:10001}"
+    # Published on localhost only: your TLS reverse proxy is the only thing that talks to it,
+    # so trusting its X-Forwarded-* headers is safe.
+    ports:
+      - "127.0.0.1:${HUB_PORT:-8000}:8000"
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+      LOG_FORMAT: json
+    volumes:
+      # ":z" relabels the directories for SELinux hosts (Fedora, RHEL) and is harmless elsewhere.
+      - ./config:/config:z
+      - ./data:/data:z
+    stop_grace_period: 20s   # lets the server flush buffered minute buckets on shutdown

@@ -1,0 +1,15 @@
+.venv/
+.venv-ha/
+__pycache__/
+.pytest_cache/
+*.pyc
+node_modules/
+
+# Local deployment: your real config (it holds the secrets in auth.yaml) and the database
+/config/
+/data/
+/config.yaml
+server/data/
+*.db
+*.db-wal
+*.db-shm

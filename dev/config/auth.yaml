@@ -1,0 +1,5 @@
+# Development secrets. They are public: never use them anywhere else.
+ui_key: "dev-dashboard-key"
+session_secret: "dev-only-session-secret-not-secret"
+keys:
+  key-home: "dev-key-home-0123456789"

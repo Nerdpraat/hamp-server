@@ -1,0 +1,6 @@
+# config.yaml: server settings. Every value is optional; these are the defaults.
+retention_days: 7        # data older than this is deleted (checked hourly)
+session_days: 30         # how long a dashboard login lasts
+cookie_secure: true      # set to false only for plain-http local testing
+db_path: data/energy.db  # SQLite database (ENERGY_HUB_DB_PATH overrides this)
+flush_interval: 5        # seconds between writes of the in-memory minute buckets

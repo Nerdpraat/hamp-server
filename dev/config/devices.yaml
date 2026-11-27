@@ -1,0 +1,227 @@
+# devices.yaml: the catalogue of device types a site can add.
+#
+# The server sends this list to every client. In Home Assistant you pick a device type, give the
+# instance a name and assign one entity to each sensor slot (filtered by `selector`).
+#
+# Per sensor:
+#   id, name, description  what the slot is. Names must differ within a device (they label the form).
+#   selector               which entities fit: `domain` (default sensor) and `device_class`.
+#   role (optional)        how the dashboard uses the sensor, for example grid_import. Sensors
+#                          without a role only appear in the generic Devices tab.
+#   kind, unit, sign, color (optional)  override what the role or the device_class implies.
+#                          kind: counter = cumulative meter, gauge = instantaneous value.
+#
+# Known roles: grid_import grid_export grid_power_import grid_power_export solar_energy solar_power
+#   battery_charge battery_discharge battery_power battery_soc gas water device_energy device_power
+#   price_import price_export price_gas   (price roles also accept a fixed number)
+devices:
+  - id: heatpump
+    name: "Heatpump"
+    description: "Heating system power draw, energy usage, and water temperature."
+    category: climate
+    sensors:
+      - id: power
+        name: "Power"
+        description: "Current electrical consumption."
+        role: device_power
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy
+        name: "Energy"
+        description: "Total electrical energy consumed."
+        role: device_energy
+        selector:
+          domain: sensor
+          device_class: energy
+
+      - id: supply_temp
+        name: "Supply Temperature"
+        description: "Outgoing water temperature."
+        selector:
+          domain: sensor
+          device_class: temperature
+
+      - id: room_temp
+        name: "Room Temperature"
+        description: "Temperature of the room"
+        selector:
+          domain: sensor
+          device_class: temperature
+
+      - id: cop
+        name: "COP"
+        description: "Current Coefficient of Performance."
+        selector:
+          domain: sensor
+
+  - id: solar_inverter
+    name: "Solar Inverter"
+    description: "PV generation and total solar yield."
+    category: energy
+    sensors:
+      - id: power
+        name: "Power"
+        description: "Current solar power output."
+        role: solar_power
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy
+        name: "Energy"
+        description: "Total solar energy produced."
+        role: solar_energy
+        selector:
+          domain: sensor
+          device_class: energy
+
+  - id: battery
+    name: "Battery"
+    description: "Home battery storage level and charge/discharge flow."
+    category: energy
+    sensors:
+      - id: state_of_charge
+        name: "State of Charge"
+        description: "Current battery percentage."
+        role: battery_soc
+        selector:
+          domain: sensor
+          device_class: battery
+
+      - id: power
+        name: "Power"
+        description: "Current charging or discharging power."
+        role: battery_power
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy_charged
+        name: "Energy Charged"
+        description: "Total energy stored into the battery."
+        role: battery_charge
+        selector:
+          domain: sensor
+          device_class: energy
+
+      - id: energy_discharged
+        name: "Energy Discharged"
+        description: "Total energy drawn from the battery."
+        role: battery_discharge
+        selector:
+          domain: sensor
+          device_class: energy
+
+  - id: gasmeter
+    name: "Gas Meter"
+    description: "Main gas utility meter."
+    category: utilities
+    sensors:
+      - id: consumption
+        name: "Gas Consumption"
+        description: "Total gas consumed."
+        role: gas
+        selector:
+          domain: sensor
+          device_class: gas
+
+      - id: price
+        name: "Gas Price"
+        description: "Price per m3: a price sensor, or a fixed number."
+        role: price_gas
+        selector:
+          domain: sensor
+
+  - id: watermeter
+    name: "Water Meter"
+    description: "Main water utility meter."
+    category: utilities
+    sensors:
+      - id: consumption
+        name: "Water Consumption"
+        description: "Total water consumed."
+        role: water
+        selector:
+          domain: sensor
+          device_class: water
+
+      - id: flow_rate
+        name: "Flow Rate"
+        description: "Current live water flow."
+        selector:
+          domain: sensor
+          device_class: volume_flow_rate
+
+  - id: electricitymeter
+    name: "Electricity Meter"
+    description: "Smart meter grid import and export."
+    category: utilities
+    sensors:
+      - id: power_import
+        name: "Power Import"
+        description: "Current power drawn from the grid."
+        role: grid_power_import
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: power_export
+        name: "Power Export"
+        description: "Current power fed back to the grid."
+        role: grid_power_export
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy_import
+        name: "Energy Import"
+        description: "Total energy imported from the grid."
+        role: grid_import
+        selector:
+          domain: sensor
+          device_class: energy
+
+      - id: energy_export
+        name: "Energy Export"
+        description: "Total energy exported to the grid."
+        role: grid_export
+        selector:
+          domain: sensor
+          device_class: energy
+
+      - id: price_import
+        name: "Import Price"
+        description: "Price per kWh imported: a price sensor, or a fixed number."
+        role: price_import
+        selector:
+          domain: sensor
+
+      - id: price_export
+        name: "Export Price"
+        description: "Compensation per kWh exported: a price sensor, or a fixed number."
+        role: price_export
+        selector:
+          domain: sensor
+
+  - id: consumer_device
+    name: "Consumer Device"
+    description: "Generic appliances or smart plugs for tracking power consumption."
+    category: appliances
+    sensors:
+      - id: power
+        name: "Power"
+        description: "Live power draw from one or more devices."
+        role: device_power
+        selector:
+          domain: sensor
+          device_class: power
+
+      - id: energy
+        name: "Energy"
+        description: "Total energy consumed by one or more devices."
+        role: device_energy
+        selector:
+          domain: sensor
+          device_class: energy

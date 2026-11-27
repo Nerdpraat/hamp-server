@@ -1,0 +1,107 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Energy Hub",
+        "description": "Enter the address of your Energy Hub server and the key for this Home Assistant site.",
+        "data": {
+          "url": "Server URL",
+          "token": "Site key"
+        },
+        "data_description": {
+          "url": "For example https://energy.example.com",
+          "token": "This site's entry under keys: in the server's auth.yaml."
+        }
+      },
+      "discover": {
+        "title": "Energy dashboard",
+        "description": "These devices were found in your energy dashboard. Untick what you do not want to send.",
+        "data": {
+          "devices": "Devices to send"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "The server rejected the key. Enter the current key for this site.",
+        "data": {
+          "token": "Site key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the server.",
+      "invalid_auth": "The server rejected this key.",
+      "invalid_url": "This is not a valid server URL.",
+      "unsupported_server": "The server speaks a protocol version this integration does not support.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This site is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Energy Hub",
+        "menu_options": {
+          "add_device": "Add a device",
+          "edit_device": "Edit a device you added",
+          "remove_devices": "Remove devices",
+          "rediscover": "Re-run discovery from the energy dashboard",
+          "settings": "Settings"
+        }
+      },
+      "add_device": {
+        "title": "Add a device",
+        "description": "Choose the type of device and give this one a name, for example Heat pump or Battery 2.",
+        "data": {
+          "device": "Device type",
+          "name": "Name"
+        }
+      },
+      "sensors": {
+        "title": "Sensors of {name}",
+        "description": "**{device}**: {about}\n\nPick the entity for each sensor you have and leave the others empty.\n\n{slots}"
+      },
+      "edit_device": {
+        "title": "Edit a device",
+        "description": "Choose one of the devices you added.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "remove_devices": {
+        "title": "Remove devices",
+        "description": "Selected devices are no longer sent. Their stored history on the server is deleted.",
+        "data": {
+          "devices": "Devices to remove"
+        }
+      },
+      "rediscover": {
+        "title": "Re-run discovery",
+        "description": "Follow the energy dashboard again and bring back every device you removed from it."
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "throttle": "Minimum seconds between updates per sensor",
+          "auto_sync": "Follow energy dashboard changes automatically"
+        }
+      }
+    },
+    "error": {
+      "no_sensors": "Pick at least one sensor.",
+      "wrong_device_class": "This entity is not the kind of sensor this slot expects.",
+      "entity_and_fixed": "Choose an entity or enter a fixed value, not both.",
+      "name_required": "Give the device a name.",
+      "unknown_device": "The server does not know this device type."
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach the server to fetch the available device types.",
+      "no_manual_devices": "You have not added any devices yourself.",
+      "unknown_device": "The server no longer knows this device type.",
+      "no_devices": "There are no devices to remove."
+    }
+  }
+}

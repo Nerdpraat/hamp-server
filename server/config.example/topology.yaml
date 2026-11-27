@@ -1,0 +1,13 @@
+# topology.yaml: the sites that may send data.
+#
+# `key` names an entry under `keys:` in auth.yaml (each site needs its own). The site id used in
+# URLs and the database is the lower-case name ("DRU05" becomes "dru05"); add `id:` to choose one.
+sites:
+  - name: "DRU05"
+    key: key-dru05-ha
+  - name: "DRU06"
+    key: key-dru06-ha
+  - name: "DRU07"
+    key: key-dru07-ha
+  - name: "DRU08"
+    key: key-dru08-ha

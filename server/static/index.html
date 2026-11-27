@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Energy Hub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <nav id="tabs">
+      <a href="#/summary" data-view="summary">Summary</a>
+      <a href="#/electricity" data-view="electricity">Electricity</a>
+      <a href="#/gas" data-view="gas">Gas</a>
+      <a href="#/devices" data-view="devices">Devices</a>
+      <a href="#/now" data-view="now">Now</a>
+    </nav>
+    <div class="right">
+      <span id="site-dot" class="dot" title="site status"></span>
+      <select id="site" aria-label="Site"></select>
+      <button id="logout" title="Log out">Log out</button>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <div id="datebar" hidden>
+    <select id="mode" aria-label="Range">
+      <option value="day">Day</option>
+      <option value="week">Week</option>
+      <option value="month">Month</option>
+    </select>
+    <span id="range-label"></span>
+    <button id="now-btn" class="pill">Now</button>
+    <button id="prev" aria-label="Previous">&#8249;</button>
+    <button id="next" aria-label="Next">&#8250;</button>
+  </div>
+
+  <div id="login" hidden>
+    <form id="login-form">
+      <h1>Energy Hub</h1>
+      <input id="login-key" type="password" placeholder="Access key" autocomplete="current-password" required>
+      <button type="submit">Log in</button>
+      <p id="login-error" role="alert"></p>
+    </form>
+  </div>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

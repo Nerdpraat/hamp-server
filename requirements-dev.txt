@@ -1,0 +1,6 @@
+-r server/requirements.txt
+pytest-homeassistant-custom-component
+pytest-asyncio
+httpx
+websockets
+jsonschema

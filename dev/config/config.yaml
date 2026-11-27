@@ -1,0 +1,3 @@
+# Energy Hub settings for the local dev stack (plain http on localhost).
+cookie_secure: false
+flush_interval: 5

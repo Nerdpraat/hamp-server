@@ -6,14 +6,24 @@ export const GRID_LINE = '#2a2a2a';
 export const PALETTE = ['#3f51b5', '#7e57c2', '#c9a227', '#26a69a', '#ef5350', '#78909c', '#ec407a', '#8d6e63'];
 
 const live = new Set();
+const observers = new Map();
 
 export function createChart(el) {
   const chart = window.echarts.init(el, null, { renderer: 'canvas' });
   live.add(chart);
+  // Cards are added to the grid one by one, so a chart is created before the final column widths
+  // are known. Follow the container so it always matches its card.
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => { if (!chart.isDisposed()) chart.resize(); });
+    ro.observe(el);
+    observers.set(chart, ro);
+  }
   return chart;
 }
 
 export function disposeAll() {
+  for (const ro of observers.values()) ro.disconnect();
+  observers.clear();
   for (const c of live) c.dispose();
   live.clear();
 }

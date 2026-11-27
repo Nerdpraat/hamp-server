@@ -11,7 +11,7 @@ services:
   energy-hub:
     build: ./server
     restart: unless-stopped
-    user: "${HUB_USER:-10001:10001}"
+    user: "${HUB_USER:-1000:1000}"
     # Published on localhost only: your TLS reverse proxy is the only thing that talks to it,
     # so trusting its X-Forwarded-* headers is safe.
     ports:

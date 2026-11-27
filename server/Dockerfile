@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
 
-RUN useradd --system --uid 10001 hub && mkdir /data /config && chown hub /data /config
+RUN useradd --system --uid 1000 hub && mkdir /data /config && chown hub /data /config
 USER hub
 
 # /config holds config.yaml, auth.yaml, topology.yaml and devices.yaml. The server writes generated

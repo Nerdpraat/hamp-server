@@ -13,8 +13,14 @@
         {"id": "gasmeter", "name": "Gas Meter", "description": "Main gas utility meter.", "category": "utilities",
          "sensors": [
            {"id": "consumption", "name": "Gas Consumption", "description": "Total gas consumed.",
-            "kind": "counter", "unit": "m3", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["gas"]}}
+            "kind": "counter", "unit": "m3",
+            "selector": {"entity": {"domain": "sensor", "device_class": "gas"}}}
+         ]},
+        {"id": "battery", "name": "Battery", "description": "Home battery.", "category": "energy",
+         "sensors": [
+           {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in Wh, entered as a number.",
+            "kind": "gauge", "unit": "Wh",
+            "selector": {"number": {"min": 0, "max": 100000, "step": 0.1, "unit_of_measurement": "Wh", "mode": "box"}}}
          ]}
       ]}},
     {"direction": "client->server", "note": "config is always the first message after a reconnect"},
@@ -22,14 +28,21 @@
       "type": "config", "currency": "EUR",
       "instances": [
         {"id": "gas-meter", "device": "gasmeter", "name": "Gas",
-         "sensors": {"consumption": {"source": "sensor.gas_total"}}}
+         "sensors": {"consumption": {"source": "sensor.gas_total"}}},
+        {"id": "battery-1", "device": "battery", "name": "Battery 1",
+         "sensors": {"capacity": {"source": "static"}}}
       ]}},
     {"direction": "server->client", "message": {
-      "type": "ack", "for": "config", "instances": 1, "sensors": 1,
+      "type": "ack", "for": "config", "instances": 2, "sensors": 2,
       "removed": {"instances": [], "sensors": []}}},
     {"direction": "client->server", "note": "only then the buffered readings, oldest first"},
     {"direction": "client->server", "message": {
       "type": "states", "items": [{"key": "gas-meter.consumption", "ts": 1795805221.0, "value": 5123.41}]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "states", "accepted": 1, "rejected": 0}},
+    {"direction": "client->server", "note": "a static value the user changed while offline is still pending: sent again, alone, so the ack confirms it. Repeating a value is harmless"},
+    {"direction": "client->server", "message": {
+      "type": "states", "items": [{"key": "battery-1.capacity", "value": 13500}]}},
     {"direction": "server->client", "message": {
       "type": "ack", "for": "states", "accepted": 1, "rejected": 0}}
   ]

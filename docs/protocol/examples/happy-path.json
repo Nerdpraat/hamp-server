@@ -13,27 +13,28 @@
          "category": "energy",
          "sensors": [
            {"id": "state_of_charge", "name": "State of Charge", "description": "Current battery percentage.",
-            "kind": "gauge", "unit": "%", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["battery"]}},
+            "kind": "gauge", "unit": "%",
+            "selector": {"entity": {"domain": "sensor", "device_class": "battery"}}},
            {"id": "power", "name": "Power", "description": "Current charging or discharging power.",
-            "kind": "gauge", "unit": "W", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["power"]}},
+            "kind": "gauge", "unit": "W",
+            "selector": {"entity": {"domain": "sensor", "device_class": "power"}}},
            {"id": "energy_charged", "name": "Energy Charged", "description": "Total energy stored into the battery.",
-            "kind": "counter", "unit": "kWh", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
-           {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in kWh, entered as a fixed number.",
-            "kind": "gauge", "unit": "kWh", "allow_fixed": true, "fixed_only": true,
-            "selector": {"domain": ["sensor"]}}
+            "kind": "counter", "unit": "kWh",
+            "selector": {"entity": {"domain": "sensor", "device_class": "energy"}}},
+           {"id": "capacity", "name": "Capacity", "description": "Usable battery capacity in Wh, entered as a number.",
+            "kind": "gauge", "unit": "Wh",
+            "selector": {"number": {"min": 0, "max": 100000, "step": 0.1,
+                                    "unit_of_measurement": "Wh", "mode": "box"}}}
          ]},
         {"id": "electricitymeter", "name": "Electricity Meter", "description": "Smart meter grid import and export.",
          "category": "utilities",
          "sensors": [
            {"id": "energy_import", "name": "Energy Import", "description": "Total energy imported from the grid.",
-            "kind": "counter", "unit": "kWh", "allow_fixed": false,
-            "selector": {"domain": ["sensor"], "device_class": ["energy"]}},
+            "kind": "counter", "unit": "kWh",
+            "selector": {"entity": {"domain": "sensor", "device_class": "energy"}}},
            {"id": "price_import", "name": "Price Import", "description": "Price of imported energy.",
-            "kind": "gauge", "unit": "/kWh", "allow_fixed": true,
-            "selector": {"domain": ["sensor"]}}
+            "kind": "gauge", "unit": "/kWh",
+            "selector": {"entity": {"domain": "sensor"}}}
          ]}
       ]}},
     {"direction": "client->server", "message": {
@@ -42,13 +43,14 @@
         {"id": "battery-1", "device": "battery", "name": "Battery 1",
          "sensors": {"state_of_charge": {"source": "sensor.b1_soc"},
                      "power": {"source": "sensor.b1_power"},
-                     "energy_charged": {"source": "sensor.b1_in"}}},
+                     "energy_charged": {"source": "sensor.b1_in"},
+                     "capacity": {"source": "static"}}},
         {"id": "electricity-meter", "device": "electricitymeter", "name": "Electricity Meter",
          "sensors": {"energy_import": {"source": "sensor.p1_import"},
-                     "price_import": {"fixed": 0.25}}}
+                     "price_import": {"source": "sensor.tariff"}}}
       ]}},
     {"direction": "server->client", "message": {
-      "type": "ack", "for": "config", "instances": 2, "sensors": 5,
+      "type": "ack", "for": "config", "instances": 2, "sensors": 6,
       "removed": {"instances": [], "sensors": []}}},
     {"direction": "client->server", "message": {
       "type": "states", "items": [
@@ -58,6 +60,11 @@
         {"key": "electricity-meter.energy_import", "ts": 1795805161.0, "value": 1092.84}]}},
     {"direction": "server->client", "message": {
       "type": "ack", "for": "states", "accepted": 4, "rejected": 0}},
+    {"direction": "client->server", "note": "a static slot: the value the user entered, one item per message so the ack confirms exactly that value"},
+    {"direction": "client->server", "message": {
+      "type": "states", "items": [{"key": "battery-1.capacity", "ts": 1795805162.0, "value": 13500}]}},
+    {"direction": "server->client", "message": {
+      "type": "ack", "for": "states", "accepted": 1, "rejected": 0}},
     {"direction": "client->server", "message": {"type": "ping"}},
     {"direction": "server->client", "message": {"type": "pong"}}
   ]

@@ -16,6 +16,9 @@ def src(name):
     return {"source": f"sensor.secret_{name}"}
 
 
+STATIC = {"static": True}      # a static slot as the database layer receives it from parse_config
+
+
 def seed(client, site="home"):
     """Write a small site and two hours of 1-minute buckets straight into the database."""
     db = client.app.state.db
@@ -25,9 +28,9 @@ def seed(client, site="home"):
         await db.replace_config(site, [
             inst("meter", "electricitymeter", "Electricity Meter",
                  energy_import=src("imp"), energy_export=src("exp"), price_import=src("price"),
-                 price_export={"fixed": 0.1}),
+                 price_export=src("pexp")),
             inst("roof", "solar_inverter", "Roof", energy=src("sol")),
-            inst("gas", "gasmeter", "Gas", consumption=src("gas"), price={"fixed": 1.0}),
+            inst("gas", "gasmeter", "Gas", consumption=src("gas"), price=src("gprice")),
             inst("bat", "battery", "Battery", state_of_charge=src("soc")),
         ])
         await db.set_site_meta(site, {"currency": "EUR"})
@@ -39,6 +42,8 @@ def seed(client, site="home"):
             rows.append((site, "roof.energy", t, 0.05, 1.0, None, 0.0, None, 1))
             rows.append((site, "gas.consumption", t, 0.01, 1.0, None, 0.0, None, 1))
             rows.append((site, "meter.price_import", t, 0.0, 0.25, 0.25, 0.25, 0.25, 1))
+            rows.append((site, "meter.price_export", t, 0.0, 0.1, 0.1, 0.1, 0.1, 1))
+            rows.append((site, "gas.price", t, 0.0, 1.0, 1.0, 1.0, 1.0, 1))
             rows.append((site, "bat.state_of_charge", t, 0.0, 55.0 + i, 55.0 + i, 55.0 + i, 55.0 + i, 1))
         await db.upsert_buckets(rows)
     client.portal.call(go)
@@ -102,10 +107,10 @@ def test_devices_lists_instances_with_sensors_and_hides_sources(authed):
     meter = {s["id"]: s for s in insts["meter"]["sensors"]}
     assert (meter["energy_export"]["role"], meter["energy_export"]["sign"]) == ("grid_export", -1)
     assert meter["energy_export"]["key"] == "meter.energy_export"
-    assert meter["price_export"]["key"] is None and meter["price_export"]["fixed"] == 0.1
+    assert meter["price_export"]["key"] == "meter.price_export" and meter["price_export"]["fixed"] is None
     assert insts["meter"]["device_name"] == "Electricity Meter" and insts["meter"]["category"] == "utilities"
     ents = {e["key"]: e for e in body["entities"]}
-    assert "meter.price_export" not in ents                    # a fixed value has no series
+    assert "meter.price_export" in ents                        # a price is an entity with a series
     assert ents["roof.energy"]["name"] == "Roof"               # solar energy: just the instance name
     assert ents["gas.consumption"]["name"] == "Gas"            # the sensor name would only repeat it
     assert ents["meter.energy_import"]["name"] == "Electricity Meter · Energy Import"
@@ -129,16 +134,21 @@ def test_generic_instances_are_flagged_for_the_devices_tab(authed):
     assert insts["bat"]["generic"] is False and insts["plug"]["generic"] is False
 
 
-def test_devices_shows_the_battery_capacity_as_a_fixed_sensor(authed):
+def test_devices_shows_the_battery_capacity_as_a_static_sensor(authed):
     db = authed.app.state.db
 
     async def go():
         await db.replace_config("home", [
-            inst("bat", "battery", "Battery", power=src("bp"), capacity={"fixed": 10})])
+            inst("bat", "battery", "Battery", power=src("bp"), capacity=STATIC)])
     authed.portal.call(go)
     bat = authed.get("/api/sites/home/devices").json()["instances"][0]
     cap = {s["id"]: s for s in bat["sensors"]}["capacity"]
-    assert cap["fixed"] == 10 and cap["key"] is None and cap["unit"] == "kWh"
+    assert cap["fixed"] is None and cap["key"] is None and cap["unit"] == "Wh"      # registered, no value yet
+
+    authed.portal.call(lambda: db.set_static_values("home", [("bat", "capacity", 10000.0)]))
+    bat = authed.get("/api/sites/home/devices").json()["instances"][0]
+    cap = {s["id"]: s for s in bat["sensors"]}["capacity"]
+    assert cap["fixed"] == 10000 and cap["key"] is None and cap["unit"] == "Wh"
 
 
 def test_instances_removed_from_the_catalogue_are_skipped(authed):
@@ -179,9 +189,9 @@ def test_totals_with_cost(authed):
     assert src_["meter.energy_import"]["energy"] == pytest.approx(12.0)
     assert src_["meter.energy_import"]["cost"] == pytest.approx(3.0)          # 12 kWh * 0.25 (price sensor)
     assert src_["meter.energy_export"]["signed_energy"] == pytest.approx(-2.4)
-    assert src_["meter.energy_export"]["cost"] == pytest.approx(-0.24)        # fixed 0.1, export is negative
+    assert src_["meter.energy_export"]["cost"] == pytest.approx(-0.24)        # price sensor 0.1, export is negative
     assert src_["roof.energy"]["cost"] is None                                # no price for solar
-    assert src_["gas.consumption"]["cost"] == pytest.approx(1.2)              # fixed 1.0 per m3
+    assert src_["gas.consumption"]["cost"] == pytest.approx(1.2)              # price sensor 1.0 per m3
     assert r["groups"]["grid"]["energy"] == pytest.approx(9.6)
     assert r["groups"]["grid"]["cost"] == pytest.approx(2.76)
     assert r["total_cost"] == pytest.approx(2.76 + 1.2)
@@ -204,7 +214,7 @@ def test_summary_empty_range(authed):
     seed(authed)
     r = authed.get(f"/api/sites/home/summary?start={DAY - 7200}&end={DAY - 3600}").json()
     assert r["values"]["home"] == 0 and r["battery_soc"] is None
-    assert r["total_cost"] is not None        # fixed prices still give a cost of 0
+    assert r["total_cost"] is None            # no price readings in the range: no cost
 
 
 def test_a_price_slot_only_prices_its_own_role(authed):
@@ -375,15 +385,15 @@ def test_static_files_are_revalidated(client):
 
 # ---- overview ------------------------------------------------------------------------------------------------
 def _fake_model(*pairs, capacity=None):
-    """A stand-in for SiteModel: overview_for_site reads `entities` (key, role, instance) and `fixed`.
+    """A stand-in for SiteModel: overview_for_site reads `entities` (key, role, instance) and `statics`.
 
-    The instance is the key's part before the dot; `capacity` maps instance -> fixed kWh.
+    The instance is the key's part before the dot; `capacity` maps instance -> static Wh.
     """
     from types import SimpleNamespace
     ents = [SimpleNamespace(key=k, role=r, instance=k.split(".")[0]) for k, r in pairs]
-    fixed = [SimpleNamespace(instance=i, sensor=SimpleNamespace(role="battery_capacity"), value=v)
-             for i, v in (capacity or {}).items()]
-    return SimpleNamespace(entities=ents, fixed=fixed)
+    statics = [SimpleNamespace(instance=i, sensor=SimpleNamespace(role="battery_capacity"), value=v)
+               for i, v in (capacity or {}).items()]
+    return SimpleNamespace(entities=ents, statics=statics)
 
 
 def test_overview_helper_sums_and_averages():
@@ -413,14 +423,14 @@ def test_overview_helper_drops_stale_and_missing():
 
 def test_overview_stored_energy_from_soc_and_capacity():
     from app.api import overview_for_site
-    out = overview_for_site(_fake_model(("b1.s", "battery_soc"), capacity={"b1": 10.0}), {"b1.s": [5.0, 62.0]}, 5.0)
+    out = overview_for_site(_fake_model(("b1.s", "battery_soc"), capacity={"b1": 10000.0}), {"b1.s": [5.0, 62.0]}, 5.0)
     assert out["battery"]["stored_kwh"] == pytest.approx(6.2)
     assert out["battery"]["soc_n"] == 1
 
 
 def test_overview_stored_energy_skips_batteries_without_capacity():
     from app.api import overview_for_site
-    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10000.0})
     out = overview_for_site(model, {"b1.s": [5.0, 40.0], "b2.s": [5.0, 80.0]}, 5.0)
     assert out["battery"]["stored_kwh"] == pytest.approx(4.0)
     assert out["battery"]["soc"] == pytest.approx(60.0) and out["battery"]["soc_n"] == 2
@@ -429,7 +439,7 @@ def test_overview_stored_energy_skips_batteries_without_capacity():
 def test_overview_stored_energy_ignores_stale_soc_and_none_without_capacity():
     from app.api import ONLINE_WINDOW, overview_for_site
     now = 10_000.0
-    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10.0})
+    model = _fake_model(("b1.s", "battery_soc"), ("b2.s", "battery_soc"), capacity={"b1": 10000.0})
     out = overview_for_site(model, {"b1.s": [now - ONLINE_WINDOW - 1, 40.0], "b2.s": [now, 80.0]}, now)
     assert out["battery"]["stored_kwh"] is None and out["battery"]["soc_n"] == 1
     out = overview_for_site(_fake_model(("b2.s", "battery_soc")), {"b2.s": [now, 80.0]}, now)

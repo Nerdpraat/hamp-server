@@ -26,20 +26,10 @@
           "minProperties": 1,
           "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "object",
-                "required": ["source"],
-                "properties": {"source": {"type": "string", "minLength": 1, "maxLength": 255}},
-                "not": {"required": ["fixed"]}
-              },
-              {
-                "type": "object",
-                "required": ["fixed"],
-                "properties": {"fixed": {"type": "number", "minimum": 0}},
-                "not": {"required": ["source"]}
-              }
-            ]
+            "description": "`source` is the id of the entity that feeds the slot, or the marker `static` for a static slot (a number, select or boolean selector), whose value is sent in `states`.",
+            "type": "object",
+            "required": ["source"],
+            "properties": {"source": {"type": "string", "minLength": 1, "maxLength": 255}}
           }
         }
       }

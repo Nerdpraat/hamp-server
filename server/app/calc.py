@@ -71,15 +71,12 @@ def compute_summary(values: dict[str, float]) -> dict:
 
 
 def cost_for(points: Sequence[tuple[int, float]],
-             price_points: Sequence[tuple[int, float]] | None = None,
-             fixed: float | None = None) -> float | None:
-    """Cost of consumption `points` [(ts, delta)] at a fixed or time-varying price.
+             price_points: Sequence[tuple[int, float]] | None = None) -> float | None:
+    """Cost of consumption `points` [(ts, delta)] at a time-varying price.
 
     The time-varying price is forward-filled; before the first known price the
     first known price is used.  Returns None when no price information exists.
     """
-    if fixed is not None:
-        return sum(d for _, d in points) * fixed
     if not price_points:
         return None
     total = 0.0
@@ -93,6 +90,6 @@ def cost_for(points: Sequence[tuple[int, float]],
     return total
 
 
-def stored_kwh(soc_pct: float, capacity_kwh: float) -> float:
-    """Energy held by a battery: state of charge in percent of its capacity in kWh."""
-    return soc_pct / 100 * capacity_kwh
+def stored_kwh(soc_pct: float, capacity_wh: float) -> float:
+    """Energy held by a battery in kWh: state of charge in percent of its capacity in Wh."""
+    return soc_pct / 100 * capacity_wh / 1000

@@ -1,8 +1,8 @@
 # The device catalogue: `devices.yaml`
 
 `devices.yaml` lists the device types a site can add. The server sends it to every client in the
-protocol `hello`. In Home Assistant the user picks a device type, names the instance and assigns
-one entity to each sensor slot.
+protocol `hello`. In Home Assistant the user picks a device type, names the instance and fills each
+sensor slot with an entity, or with a value for a static slot.
 
 ```yaml
 devices:
@@ -16,19 +16,28 @@ devices:
         description: "Current battery percentage."
         role: battery_soc
         selector:
-          domain: sensor
-          device_class: battery
+          entity:
+            domain: sensor
+            device_class: battery
       - id: energy_charged
         name: "Energy Charged"
         description: "Total energy stored into the battery."
         role: battery_charge
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
       - id: capacity
         name: "Capacity"
-        description: "Usable battery capacity in kWh, entered as a fixed number."
+        description: "Usable battery capacity in Wh, entered as a number."
         role: battery_capacity
+        selector:
+          number:
+            min: 0
+            max: 100000
+            step: 0.1
+            unit_of_measurement: "Wh"
+            mode: box
 ```
 
 The shipped file is `server/config.example/devices.yaml`. The server checks the whole file when
@@ -47,14 +56,38 @@ the catalogue at request time.
 | sensor | `id` | yes | lower case letters, digits and `_`; unique within the device |
 | sensor | `name` | yes | unique within the device. **Labels the form field in Home Assistant**, so names must differ |
 | sensor | `description` | no | explained under the form |
-| sensor | `selector` | no | which entities fit: `domain` (default `sensor`) and `device_class`. Each is a string or a list |
+| sensor | `selector` | no | a native Home Assistant selector with exactly one of `entity`, `number`, `select` or `boolean`, see below. Default: `entity` with `domain: sensor` |
 | sensor | `role` | no | how the dashboard uses the sensor, see below. Without a role the sensor only appears in the Devices tab |
 | sensor | `kind` | no | `counter` (a cumulative meter) or `gauge` (an instantaneous value). Default: from the role, else from the `device_class` |
 | sensor | `unit` | no | the unit the server stores. Default: from the role, else from the `device_class`. The client converts Home Assistant's unit to it |
 | sensor | `sign` | no | `-1` makes a counter negative in totals (export, battery charge). Default: from the role |
 | sensor | `color` | no | chart colour. Default: from the role |
 
-A slot takes exactly one entity. Several of the same device (two batteries, five smart plugs) are
+## Selectors
+
+The server sends each slot's `selector` to the clients **exactly as written** here. It is a native
+Home Assistant selector, so the client can render it as it is. The type decides what the slot holds:
+
+| Selector | The slot holds | Example |
+|---|---|---|
+| `entity` | readings of one Home Assistant entity (a series). Use `domain` and `device_class`, each a string or a list | `entity: {domain: sensor, device_class: power}` |
+| `number` | a static number. `min`, `max`, `step` (a number or `any`), `unit_of_measurement`, `mode` (`box` or `slider`), all optional | `number: {min: 0, max: 100000, unit_of_measurement: Wh}` |
+| `select` | a static string. `options` is a non-empty list of strings or `{value, label}` mappings. `custom_value: true` also allows any other string. `multiple` is not supported | `select: {options: [auto, "on", "off"]}` |
+| `boolean` | a static true or false | `boolean: {}` |
+
+The old flat form (`selector: {domain: sensor}`) is refused at startup.
+
+A **static** slot (`number`, `select` or `boolean`) has no entity. The client registers it in `config`
+as `{"source": "static"}` and sends the value in a `states` message when the user enters or changes
+it. The server checks the value against the selector, stores the latest one and uses it (for
+example the battery capacity). A static slot has no series and no history. Its `role` can only be
+`battery_capacity`, or none. An `entity` slot cannot have the role `battery_capacity`.
+
+Static values are checked like this: a `number` must be a finite JSON number within `min` and
+`max` (`step` is only a hint for the input box), a `select` value must be one of the options (or any
+string with `custom_value`), a `boolean` must be `true` or `false`. Zero and `false` are valid values.
+
+An `entity` slot takes exactly one entity. Several of the same device (two batteries, five smart plugs) are
 several *instances*, not several entities in one slot.
 
 ## Defaults from the device class
@@ -90,23 +123,18 @@ A role tells the dashboard what a sensor means. Roles are fixed in the server co
 | `battery_power` | gauge | W | | positive while discharging |
 | `battery_soc` | gauge | % | | battery level (the mean over all batteries is shown) |
 | `device_power` | gauge | W | | device power |
-| `battery_capacity` | gauge | kWh | | usable battery capacity; fixed number only, used to compute stored energy |
+| `battery_capacity` | gauge | Wh | | usable battery capacity; a static `number` slot, used to compute stored energy |
 | `price_import`, `price_export` | gauge | /kWh | | price slots, see below |
 | `price_gas` | gauge | /m3 | | price slot |
 
-Existing deployments must add the `capacity` slot (id `capacity`, role `battery_capacity`) to the
-battery device in their own `devices.yaml`. The shipped example already has it.
+Existing deployments must add the `capacity` slot (id `capacity`, role `battery_capacity`, with the
+`selector.number` block shown above) to the battery device in their own `devices.yaml`, and convert
+every selector to the native form. The shipped example already does both.
 
 ### Price slots and cost
 
-Most sensors take an entity. Some roles also accept a **fixed number**: the price roles
-(entity or number) and `battery_capacity` (number only, the role is `fixed_only`). In the protocol
-this is `allow_fixed`, and `fixed_only` for slots that never take an entity.
-
-A price slot is an ordinary sensor with a `price_*` role. The client can fill it with an entity
-(a tariff sensor, which may change over time) **or with a fixed number**: the options flow shows a
-second field "(fixed value)" for these slots. Cost is the energy delta of a counter times the price
-of the same instance:
+A price slot is an ordinary `entity` sensor with a `price_*` role: a tariff sensor, whose value may
+change over time. Cost is the energy delta of a counter times the price of the same instance:
 
 * `grid_import` uses `price_import`, `grid_export` uses `price_export` (shown as negative),
   `gas` uses `price_gas`.
@@ -114,16 +142,16 @@ of the same instance:
 
 ### Battery capacity and stored energy
 
-The `capacity` slot of a battery takes a fixed number of kWh. In Home Assistant it is a number box
-named "Capacity (fixed value)" with no entity picker. Stored energy per battery is state of charge
-x capacity. It is shown:
+The `capacity` slot of a battery is a static `number` in Wh. In Home Assistant it is a number box
+with no entity picker. Stored energy per battery is state of charge x capacity, shown in kWh. It is
+shown:
 
 * in the overview, per site and in total, next to the average percentage;
 * as the "<battery> · Stored energy" tile on the Now tab;
 * as the "Battery stored energy" chart on the Electricity tab.
 
-A battery without a capacity shows only its percentage and is left out of the kWh sums. The average
-percentage is the plain mean over all batteries, not weighted by capacity.
+A battery without a capacity (not entered yet, or 0) shows only its percentage and is left out of the
+kWh sums. The average percentage is the plain mean over all batteries, not weighted by capacity.
 
 ## Instances and names
 
@@ -151,10 +179,10 @@ Append an entry. For example an EV charger whose sensors have no role (so it app
     sensors:
       - id: power
         name: "Power"
-        selector: {domain: sensor, device_class: power}
+        selector: {entity: {domain: sensor, device_class: power}}
       - id: session_energy
         name: "Session Energy"
-        selector: {domain: sensor, device_class: energy}
+        selector: {entity: {domain: sensor, device_class: energy}}
 ```
 
 After a restart of the server, "EV Charger" is offered in the options flow of every Home

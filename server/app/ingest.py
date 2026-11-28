@@ -7,13 +7,14 @@ import math
 import re
 import time
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette import websockets as _starlette_ws
 
 from .auth import site_for_authorization
-from .devices import Catalogue
+from .devices import Catalogue, ResolvedSensor, StaticRejected, validate_static
 from .model import load_site_model
 
 log = logging.getLogger("energy_hub.ingest")
@@ -31,6 +32,7 @@ MAX_MESSAGES_PER_SECOND = 100
 MAX_INSTANCES = 100
 LAST_SEEN_INTERVAL = 30.0
 
+STATIC_SOURCE = "static"     # the `source` of a static slot: a marker, not an entity id
 INSTANCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 LIMITS = {
     "max_message_bytes": MAX_MESSAGE_BYTES,
@@ -73,10 +75,13 @@ def _is_number(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
-    """Validate a `config` message. Returns (currency, instances) or raises ConfigProblem."""
-    currency = msg.get("currency", "")
-    if not isinstance(currency, str) or len(currency) > 8:
+def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str | None, list[dict]]:
+    """Validate a `config` message. Returns (currency, instances) or raises ConfigProblem.
+
+    `currency` is None when the message has none: the site keeps the currency it had.
+    """
+    currency = msg.get("currency") if "currency" in msg else None
+    if "currency" in msg and (not isinstance(currency, str) or len(currency) > 8):
         raise ConfigProblem("currency", "must be a text of at most 8 characters")
     instances = msg.get("instances")
     if not isinstance(instances, list):
@@ -112,40 +117,43 @@ def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
             if sensor is None:
                 raise ConfigProblem(sp, f"unknown sensor {sid!r} for device {device!r}")
             if not isinstance(entry, dict):
-                raise ConfigProblem(sp, "must be an object with 'source' or 'fixed'")
-            has_source, has_fixed = "source" in entry, "fixed" in entry
-            if has_source and has_fixed:
-                raise ConfigProblem(sp, "give either 'source' or 'fixed', not both")
-            if not has_source and not has_fixed:
-                raise ConfigProblem(sp, "needs a 'source' (or a 'fixed' number for price slots)")
-            if has_source and sensor.fixed_only:
-                raise ConfigProblem(f"{sp}.source", f"sensor {sid!r} takes only a fixed value")
-            if has_source:
-                src = entry["source"]
-                if not isinstance(src, str) or not 1 <= len(src) <= 255:
-                    raise ConfigProblem(f"{sp}.source", "must be a text of 1 to 255 characters")
-                clean[sid] = {"source": src}
+                raise ConfigProblem(sp, "must be an object with a 'source'")
+            if "source" not in entry:
+                raise ConfigProblem(sp, "needs a 'source' (the entity id, or 'static' for a static slot)")
+            src = entry["source"]
+            if not isinstance(src, str) or not 1 <= len(src) <= 255:
+                raise ConfigProblem(f"{sp}.source", "must be a text of 1 to 255 characters")
+            if sensor.static:
+                if src != STATIC_SOURCE:
+                    raise ConfigProblem(f"{sp}.source", f"sensor {sid!r} is a static slot: its source must be "
+                                                         f"{STATIC_SOURCE!r}, not an entity")
+                clean[sid] = {"static": True}
             else:
-                if not sensor.allow_fixed:
-                    raise ConfigProblem(f"{sp}.fixed", f"sensor {sid!r} does not accept a fixed value")
-                fixed = entry["fixed"]
-                if sensor.fixed_only:
-                    if not _is_number(fixed) or fixed <= 0:
-                        raise ConfigProblem(f"{sp}.fixed", "must be a number greater than 0")
-                elif not _is_number(fixed) or fixed < 0:
-                    raise ConfigProblem(f"{sp}.fixed", "must be a number of 0 or more")
-                clean[sid] = {"fixed": float(fixed)}
+                if src == STATIC_SOURCE:
+                    raise ConfigProblem(f"{sp}.source", f"sensor {sid!r} takes an entity, not {STATIC_SOURCE!r}")
+                clean[sid] = {"source": src}
         result.append({"id": iid, "device": device, "name": name, "sensors": clean})
     return currency, result
 
 
-def _key_kinds(instances: list[dict], catalogue: Catalogue) -> dict[str, str]:
-    """key -> kind for every sensor that has a source."""
-    out: dict[str, str] = {}
+@dataclass(frozen=True)
+class Slot:
+    """A key the client may send a value for: an entity with readings, or a static slot."""
+
+    instance: str
+    sensor: ResolvedSensor
+
+    @property
+    def static(self) -> bool:
+        return self.sensor.static
+
+
+def _slots(instances: list[dict], catalogue: Catalogue) -> dict[str, Slot]:
+    """key -> Slot for every registered sensor (entity sources and static slots)."""
+    out: dict[str, Slot] = {}
     for inst in instances:
-        for sid, entry in inst["sensors"].items():
-            if "source" in entry:
-                out[f"{inst['id']}.{sid}"] = catalogue.sensor(inst["device"], sid).kind
+        for sid in inst["sensors"]:
+            out[f"{inst['id']}.{sid}"] = Slot(inst["id"], catalogue.sensor(inst["device"], sid))
     return out
 
 
@@ -179,7 +187,8 @@ async def ingest(ws: WebSocket):
     })
 
     model = await load_site_model(db, cfg.catalogue, site.id)
-    keys: dict[str, str] = {e.key: e.kind for e in model.entities}
+    keys: dict[str, Slot] = {e.key: Slot(e.instance, e.sensor) for e in model.entities}
+    keys.update({f"{v.instance}.{v.sensor.id}": Slot(v.instance, v.sensor) for v in model.statics})
     limiter = RateLimiter(MAX_MESSAGES_PER_SECOND)
     last_touch = 0.0
     await db.touch_site(site.id, time.time())
@@ -206,7 +215,7 @@ async def ingest(ws: WebSocket):
             if kind == "config":
                 await ws.send_json(await _handle_config(st, site.id, msg, keys))
             elif kind == "states":
-                await ws.send_json(_handle_states(st, site.id, msg, keys))
+                await ws.send_json(await _handle_states(st, site.id, msg, keys))
             elif kind == "ping":
                 await ws.send_json({"type": "pong"})
             else:
@@ -227,15 +236,16 @@ async def ingest(ws: WebSocket):
             pass
 
 
-async def _handle_config(st, site_id: str, msg: dict, keys: dict[str, str]) -> dict:
+async def _handle_config(st, site_id: str, msg: dict, keys: dict[str, Slot]) -> dict:
     try:
         currency, instances = parse_config(msg, st.config.catalogue)
     except ConfigProblem as problem:
         return _error("invalid_config", problem.message, problem.path)
 
     removed = await st.db.replace_config(site_id, instances)
-    await st.db.set_site_meta(site_id, {"currency": currency})
-    new_keys = _key_kinds(instances, st.config.catalogue)
+    if currency is not None:
+        await st.db.set_site_meta(site_id, {"currency": currency})
+    new_keys = _slots(instances, st.config.catalogue)
     st.hub.forget(site_id, [k for k in keys if k not in new_keys])
     keys.clear()
     keys.update(new_keys)
@@ -247,34 +257,56 @@ async def _handle_config(st, site_id: str, msg: dict, keys: dict[str, str]) -> d
     }
 
 
-def _handle_states(st, site_id: str, msg: dict, keys: dict[str, str]) -> dict:
+async def _handle_states(st, site_id: str, msg: dict, keys: dict[str, Slot]) -> dict:
+    """Process the items of a `states` message in order and acknowledge them.
+
+    Entity readings go to the aggregator. Static values are validated against the slot's selector
+    and persisted before the ack is sent, so `accepted` means "stored". Within a message the last
+    value for a slot wins, and repeating a value is harmless.
+    """
     items = msg.get("items")
     if not isinstance(items, list) or len(items) > MAX_ITEMS_PER_BATCH:
         return _error("bad_states", f"'items' must be a list of at most {MAX_ITEMS_PER_BATCH}")
     accepted = rejected = 0
     unknown: list[str] = []
+    static_updates: list[tuple[str, str, Any]] = []     # (instance, sensor id, value), in receive order
     now = time.time()
     for item in items:
         if not isinstance(item, dict):
             rejected += 1
             continue
         key = item.get("key")
-        kind = keys.get(key) if isinstance(key, str) else None
-        if kind is None:
+        slot = keys.get(key) if isinstance(key, str) else None
+        if slot is None:
             rejected += 1
             if isinstance(key, str) and key not in unknown and len(unknown) < 20:
                 unknown.append(key[:64])
             continue
         value = item.get("value")
+        if slot.static:
+            try:
+                static_updates.append((slot.instance, slot.sensor.id, validate_static(slot.sensor, value)))
+            except StaticRejected as why:
+                log.info("site %s: static value for %s rejected: %s", site_id, key, why)
+                rejected += 1
+            continue
         ts = item.get("ts", now)
         if not _is_number(value) or not _is_number(ts):
             rejected += 1
             continue
-        if st.aggregator.add(site_id, key, kind, float(ts), float(value)):
+        if st.aggregator.add(site_id, key, slot.sensor.kind, float(ts), float(value)):
             accepted += 1
             st.hub.update(site_id, key, float(ts), float(value))
         else:
             rejected += 1
+    if static_updates:
+        try:
+            stored = await st.db.set_static_values(site_id, static_updates)
+        except Exception:  # noqa: BLE001 - a failed write must not be acknowledged
+            log.exception("site %s: could not store %d static value(s)", site_id, len(static_updates))
+            stored = 0
+        accepted += stored
+        rejected += len(static_updates) - stored
     reply = {"type": "ack", "for": "states", "accepted": accepted, "rejected": rejected}
     if unknown:
         reply["unknown_keys"] = unknown

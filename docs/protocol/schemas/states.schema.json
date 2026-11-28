@@ -15,7 +15,10 @@
         "properties": {
           "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,39}\\.[a-z][a-z0-9_]*$"},
           "ts": {"type": "number"},
-          "value": {"type": "number"}
+          "value": {
+            "description": "A reading of an entity slot is a number. A static slot takes a number, string or boolean that fits its selector.",
+            "type": ["number", "string", "boolean"]
+          }
         }
       }
     }

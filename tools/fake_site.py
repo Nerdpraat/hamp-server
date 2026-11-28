@@ -15,7 +15,7 @@ from pathlib import Path
 import websockets
 
 sys.path.insert(0, str(Path(__file__).parent))
-from simulation import Sim, config_message, readings  # noqa: E402
+from simulation import Sim, config_message, readings, static_values  # noqa: E402
 
 
 async def run(url: str, key: str, rate: float, duration: float | None, seed: int,
@@ -34,6 +34,11 @@ async def run(url: str, key: str, rate: float, duration: float | None, seed: int
         if reply["type"] == "error":
             raise SystemExit(f"config rejected: {reply['message']} (at {reply.get('path')})")
         print("config accepted:", reply["instances"], "instances,", reply["sensors"], "sensors")
+        for key, value in static_values().items():          # one item per message: the ack confirms it
+            await ws.send(json.dumps({"type": "states", "items": [{"key": key, "value": value}]}))
+            reply = json.loads(await ws.recv())
+            if reply.get("type") != "ack" or reply["accepted"] != 1:
+                raise SystemExit(f"static value {key}={value} refused: {reply}")
         start = time.time()
         interval = 1.0 / rate
         while duration is None or time.time() - start < duration:

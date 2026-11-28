@@ -76,3 +76,34 @@ def test_document_states_the_key_facts():
     for fact in ("403", "4000", "4429", "1009", "<instance id>.<sensor id>", "version 2",
                  "deleted together with their stored history", "90%"):
         assert fact in text, fact
+
+
+@pytest.mark.parametrize("value", [13.5, 0, -1, "auto", "", True, False])
+def test_states_values_may_be_a_number_a_string_or_a_boolean(value):
+    ps.validate_client_message({"type": "states", "items": [{"key": "battery-1.capacity", "value": value}]})
+
+
+@pytest.mark.parametrize("value", [None, [1], {"a": 1}])
+def test_other_states_value_types_are_invalid(value):
+    assert ps.errors({"type": "states", "items": [{"key": "a.b", "value": value}]}, "states")
+
+
+def test_config_registers_a_static_slot_with_the_source_marker():
+    cfg = {"type": "config", "instances": [{"id": "b", "device": "battery", "name": "B",
+                                            "sensors": {"capacity": {"source": "static"}}}]}
+    ps.validate_client_message(cfg)
+    cfg["instances"][0]["sensors"]["capacity"] = {"fixed": 1}
+    assert ps.errors(cfg, "config")
+
+
+@pytest.mark.parametrize("selector", [
+    {"entity": {"domain": "sensor"}}, {"entity": {}}, {"number": {"min": 0, "step": "any"}},
+    {"select": {"options": ["a", {"value": "b", "label": "B"}], "custom_value": True}}, {"boolean": {}},
+])
+def test_hello_accepts_every_native_selector_type(selector):
+    sensor = {"id": "s", "name": "S", "description": "", "kind": "gauge", "unit": "", "selector": selector}
+    hello = {"type": "hello", "version": 2, "site": {"id": "a", "name": "A"}, "server_time": 1,
+             "limits": {"max_message_bytes": 1, "max_items_per_batch": 1, "max_messages_per_second": 1,
+                        "max_instances": 1},
+             "devices": [{"id": "d", "name": "D", "description": "", "category": "x", "sensors": [sensor]}]}
+    ps.validate_server_message(hello)

@@ -1,11 +1,17 @@
 # devices.yaml: the catalogue of device types a site can add.
 #
 # The server sends this list to every client. In Home Assistant you pick a device type, give the
-# instance a name and assign one entity to each sensor slot (filtered by `selector`).
+# instance a name and fill each sensor slot with an entity or, for a static slot, a value (see `selector`).
 #
 # Per sensor:
 #   id, name, description  what the slot is. Names must differ within a device (they label the form).
-#   selector               which entities fit: `domain` (default sensor) and `device_class`.
+#   selector               a native Home Assistant selector, sent to clients unchanged. Exactly one of:
+#                            entity:  {domain, device_class}  the slot is filled with an entity
+#                            number:  {min, max, step, unit_of_measurement, mode}
+#                            select:  {options: [...]}        (single choice)
+#                            boolean: {}
+#                          number, select and boolean make a static slot: the client sends the
+#                          value the user entered.
 #   role (optional)        how the dashboard uses the sensor, for example grid_import. Sensors
 #                          without a role only appear in the generic Devices tab.
 #   kind, unit, sign, color (optional)  override what the role or the device_class implies.
@@ -13,7 +19,7 @@
 #
 # Known roles: grid_import grid_export grid_power_import grid_power_export solar_energy solar_power
 #   battery_charge battery_discharge battery_power battery_soc gas water device_energy device_power
-#   price_import price_export price_gas   (price roles also accept a fixed number)
+#   price_import price_export price_gas   battery_capacity (a static number slot)
 devices:
   - id: heatpump
     name: "Heatpump"
@@ -25,43 +31,49 @@ devices:
         description: "Current electrical consumption."
         role: device_power
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy
         name: "Energy"
         description: "Total electrical energy consumed."
         role: device_energy
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: supply_temp
         name: "Supply Temperature"
         description: "Outgoing water temperature."
         selector:
-          domain: sensor
-          device_class: temperature
+          entity:
+            domain: sensor
+            device_class: temperature
 
       - id: room_temp
         name: "Room Temperature"
         description: "Temperature of the room"
         selector:
-          domain: sensor
-          device_class: temperature
+          entity:
+            domain: sensor
+            device_class: temperature
 
       - id: outside_temp
         name: "Outside Temperature"
         description: "Temperature outside the building"
         selector:
-          domain: sensor
-          device_class: temperature
+          entity:
+            domain: sensor
+            device_class: temperature
 
       - id: cop
         name: "COP"
         description: "Current Coefficient of Performance."
         selector:
-          domain: sensor
+          entity:
+            domain: sensor
 
   - id: solar_inverter
     name: "Solar Inverter"
@@ -73,16 +85,18 @@ devices:
         description: "Current solar power output."
         role: solar_power
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy
         name: "Energy"
         description: "Total solar energy produced."
         role: solar_energy
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
   - id: battery
     name: "Battery"
@@ -94,44 +108,56 @@ devices:
         description: "Current battery percentage."
         role: battery_soc
         selector:
-          domain: sensor
-          device_class: battery
+          entity:
+            domain: sensor
+            device_class: battery
 
       - id: power
         name: "Power"
         description: "Current charging or discharging power."
         role: battery_power
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy_charged
         name: "Energy Charged"
         description: "Total energy stored into the battery."
         role: battery_charge
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: energy_discharged
         name: "Energy Discharged"
         description: "Total energy drawn from the battery."
         role: battery_discharge
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: temperature
         name: "Temperature"
         description: "Internal battery temperature"
         selector:
-          domain: sensor
-          device_class: temperature
+          entity:
+            domain: sensor
+            device_class: temperature
 
       - id: capacity
         name: "Capacity"
-        description: "Usable battery capacity in kWh, entered as a fixed number."
+        description: "Usable battery capacity in Wh, entered as a number."
         role: battery_capacity
+        selector:
+          number:
+            min: 0
+            max: 100000
+            step: 0.1
+            unit_of_measurement: "Wh"
+            mode: box
 
   - id: gasmeter
     name: "Gas Meter"
@@ -143,15 +169,17 @@ devices:
         description: "Total gas consumed."
         role: gas
         selector:
-          domain: sensor
-          device_class: gas
+          entity:
+            domain: sensor
+            device_class: gas
 
       - id: price
         name: "Gas Price"
-        description: "Price per m3: a price sensor, or a fixed number."
+        description: "Price per m3: a price sensor."
         role: price_gas
         selector:
-          domain: sensor
+          entity:
+            domain: sensor
 
   - id: watermeter
     name: "Water Meter"
@@ -163,15 +191,17 @@ devices:
         description: "Total water consumed."
         role: water
         selector:
-          domain: sensor
-          device_class: water
+          entity:
+            domain: sensor
+            device_class: water
 
       - id: flow_rate
         name: "Flow Rate"
         description: "Current live water flow."
         selector:
-          domain: sensor
-          device_class: volume_flow_rate
+          entity:
+            domain: sensor
+            device_class: volume_flow_rate
 
   - id: electricitymeter
     name: "Electricity Meter"
@@ -183,46 +213,52 @@ devices:
         description: "Current power drawn from the grid."
         role: grid_power_import
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: power_export
         name: "Power Export"
         description: "Current power fed back to the grid."
         role: grid_power_export
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy_import
         name: "Energy Import"
         description: "Total energy imported from the grid."
         role: grid_import
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: energy_export
         name: "Energy Export"
         description: "Total energy exported to the grid."
         role: grid_export
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: price_import
         name: "Import Price"
-        description: "Price per kWh imported: a price sensor, or a fixed number."
+        description: "Price per kWh imported: a price sensor."
         role: price_import
         selector:
-          domain: sensor
+          entity:
+            domain: sensor
 
       - id: price_export
         name: "Export Price"
-        description: "Compensation per kWh exported: a price sensor, or a fixed number."
+        description: "Compensation per kWh exported: a price sensor."
         role: price_export
         selector:
-          domain: sensor
+          entity:
+            domain: sensor
 
   - id: consumer_device
     name: "Consumer Device"
@@ -234,16 +270,18 @@ devices:
         description: "Live power draw from one or more devices."
         role: device_power
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy
         name: "Energy"
         description: "Total energy consumed by one or more devices."
         role: device_energy
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
   - id: water_heater
     name: "Water Heater"
@@ -254,20 +292,23 @@ devices:
         description: "Current electrical consumption."
         role: device_power
         selector:
-          domain: sensor
-          device_class: power
+          entity:
+            domain: sensor
+            device_class: power
 
       - id: energy
         name: "Energy"
         description: "Total electrical energy consumed."
         role: device_energy
         selector:
-          domain: sensor
-          device_class: energy
+          entity:
+            domain: sensor
+            device_class: energy
 
       - id: water_temp
         name: "Water Temperature"
         description: "Temperature of the water in the tank."
         selector:
-          domain: sensor
-          device_class: temperature
+          entity:
+            domain: sensor
+            device_class: temperature

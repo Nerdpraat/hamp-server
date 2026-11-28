@@ -7,9 +7,11 @@ for building your own client, in any language. It shows:
 * the handshake with the site key and the version check,
 * choosing device types from the catalogue the server sends in `hello`,
 * sending `config`, then `states`, and reading the acknowledgements,
+* static slots (a number, select or boolean selector): registered as `{"source": "static"}`, the value
+  sent alone in a `states` message, kept until the server accepts it and sent again after a reconnect,
 * the client rules: throttle, keep-alive resend every 60 s, reconnect with backoff, bounded buffer.
 
-Run a demo (two batteries, a smart plug and a meter with a fixed price) against a server:
+Run a demo (two batteries with a static capacity, a smart plug and a meter) against a server:
 
     python tools/reference_client.py --url ws://localhost:8000/ws/ingest --key <site key> --duration 30
 """
@@ -45,13 +47,27 @@ class Client:
         self._pending: dict[str, tuple[float, float]] = {}       # key -> (ts, value): latest only
         self._last_sent: dict[str, tuple[float, float]] = {}     # key -> (value, when)
         self._buffer: deque[list[dict]] = deque(maxlen=max_buffer)  # batches made while offline
+        self._static: dict[str, object] = {}                     # key -> value not yet accepted
+        self._inflight: deque[tuple[str, object] | None] = deque()  # sent `states`, in order: static or None
         self._ws = None
 
     # ---- what the application calls ------------------------------------------------------
     def keys(self) -> list[str]:
-        """Keys of the sensors that have a source: <instance id>.<sensor id>."""
-        return [f"{i['id']}.{sid}" for i in self.instances
-                for sid, entry in i["sensors"].items() if "source" in entry]
+        """Keys of the sensors that have readings: <instance id>.<sensor id>."""
+        return [k for k, entry in self._entries() if entry["source"] != "static"]
+
+    def static_keys(self) -> list[str]:
+        """Keys of the static slots."""
+        return [k for k, entry in self._entries() if entry["source"] == "static"]
+
+    def _entries(self):
+        return [(f"{i['id']}.{sid}", entry) for i in self.instances for sid, entry in i["sensors"].items()]
+
+    def set_static(self, key: str, value: object) -> None:
+        """The user entered or changed a static value. It is kept until the server accepts it."""
+        if key not in self.static_keys():
+            raise KeyError(f"{key} is not a static slot")
+        self._static[key] = value
 
     def push(self, key: str, value: float) -> None:
         if math.isfinite(value):
@@ -93,15 +109,21 @@ class Client:
             raise ProtocolError(f"config rejected: {reply['message']} (at {reply.get('path')})")
         print(f"connected to site {self.hello['site']['name']}: config accepted "
               f"({reply['instances']} instances, {reply['sensors']} sensors)")
+        self._inflight.clear()                                    # acks of the old connection never arrive
         reader = asyncio.create_task(self._read(ws))
         try:
             while end is None or time.monotonic() < end:
+                for key, value in list(self._static.items()):     # one item per message: the ack confirms it
+                    self._inflight.append((key, value))
+                    await ws.send(json.dumps({"type": "states", "items": [{"key": key, "value": value}]}))
                 while self._buffer:                               # oldest first
+                    self._inflight.append(None)
                     await ws.send(json.dumps({"type": "states", "items": self._buffer[0]}))
                     self._buffer.popleft()
                 batch = self._collect()
                 if batch:
                     try:
+                        self._inflight.append(None)
                         await ws.send(json.dumps({"type": "states", "items": batch}))
                     except websockets.exceptions.ConnectionClosed:
                         self._buffer.append(batch)                # keep it for the next connection
@@ -127,18 +149,27 @@ class Client:
             msg = json.loads(raw)
             if msg.get("type") == "error":
                 print("server error:", msg["code"], msg["message"])
-            elif msg.get("type") == "ack" and msg.get("for") == "states" and msg.get("rejected"):
-                print("server rejected", msg["rejected"], "readings", msg.get("unknown_keys", ""))
+            elif msg.get("type") == "ack" and msg.get("for") == "states":
+                sent = self._inflight.popleft() if self._inflight else None    # acks come in sending order
+                if sent is not None:
+                    key, value = sent
+                    if self._static.get(key) == value:            # not changed again while waiting
+                        del self._static[key]                     # accepted, or refused for good: stop sending
+                    if not msg.get("accepted"):
+                        print(f"server refused the value {value!r} for {key}")
+                elif msg.get("rejected"):
+                    print("server rejected", msg["rejected"], "readings", msg.get("unknown_keys", ""))
 
 
 def demo_instances() -> list[dict]:
-    """Two batteries, one smart plug and a meter with a fixed import price."""
+    """Two batteries with a static capacity, one smart plug and a meter with an import price sensor."""
     def battery(n: int) -> dict:
         return {"id": f"battery-{n}", "device": "battery", "name": f"Battery {n}", "sensors": {
             "state_of_charge": {"source": f"demo.battery{n}.soc"},
             "power": {"source": f"demo.battery{n}.power"},
             "energy_charged": {"source": f"demo.battery{n}.charged"},
-            "energy_discharged": {"source": f"demo.battery{n}.discharged"}}}
+            "energy_discharged": {"source": f"demo.battery{n}.discharged"},
+            "capacity": {"source": "static"}}}
     return [
         battery(1), battery(2),
         {"id": "plug-car", "device": "consumer_device", "name": "Car charger", "sensors": {
@@ -146,21 +177,25 @@ def demo_instances() -> list[dict]:
         {"id": "meter", "device": "electricitymeter", "name": "Electricity Meter", "sensors": {
             "energy_import": {"source": "demo.meter.import"},
             "power_import": {"source": "demo.meter.power"},
-            "price_import": {"fixed": 0.25}}},
+            "price_import": {"source": "demo.meter.price"}}},
     ]
 
 
 async def demo(url: str, key: str, duration: float) -> None:
     client = Client(url, key, demo_instances(), currency="EUR", throttle=1.0)
+    client.set_static("battery-1.capacity", 10000)           # the user entered 10 kWh (the slot is in Wh)
+    client.set_static("battery-2.capacity", 5000)
 
     async def feed() -> None:
-        energy = {k: 1000.0 for k in client.keys() if k.endswith(("charged", "discharged", "energy", "import"))}
+        energy = {k: 1000.0 for k in client.keys() if k.endswith(("charged", "discharged", "energy", "energy_import"))}
         while True:
             t = time.time()
             for key in client.keys():
                 if key in energy:
                     energy[key] += 0.001
                     client.push(key, energy[key])
+                elif key.endswith("price_import"):
+                    client.push(key, 0.25)
                 elif key.endswith("soc"):
                     client.push(key, 50 + 10 * math.sin(t / 30))
                 else:

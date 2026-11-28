@@ -42,10 +42,6 @@ def test_full_self_consumption():
     assert s["self_sufficiency_pct"] == 50
 
 
-def test_cost_fixed():
-    assert calc.cost_for([(0, 2.0), (60, 3.0)], fixed=0.5) == pytest.approx(2.5)
-
-
 def test_cost_variable_forward_fill():
     pts = [(0, 1.0), (60, 1.0), (120, 1.0)]
     prices = [(60, 0.2), (120, 0.4)]
@@ -58,5 +54,5 @@ def test_cost_without_price_is_none():
 
 
 def test_stored_kwh():
-    assert calc.stored_kwh(50, 10) == pytest.approx(5.0)
-    assert calc.stored_kwh(0, 10) == 0 and calc.stored_kwh(100, 13.5) == pytest.approx(13.5)
+    assert calc.stored_kwh(50, 10000) == pytest.approx(5.0)
+    assert calc.stored_kwh(0, 10000) == 0 and calc.stored_kwh(100, 13500) == pytest.approx(13.5)

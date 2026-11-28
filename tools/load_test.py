@@ -21,7 +21,7 @@ def build_instances(hello: dict, count: int) -> tuple[list[dict], dict[str, str]
     instances: list[dict] = []
     kinds: dict[str, str] = {}
     for dev in hello["devices"]:
-        take = [s for s in dev["sensors"] if not s["allow_fixed"]][: count - len(kinds)]
+        take = [s for s in dev["sensors"] if "entity" in s["selector"]][: count - len(kinds)]
         if not take:
             break
         iid = f"load-{dev['id']}".replace("_", "-")[:40]

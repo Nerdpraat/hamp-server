@@ -15,6 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Copy device definition files
+        run: cp ./server/config.example/devices.yaml ${{ vars.CONFIG_DIR }}/devices.yaml
+
       - name: Run Docker Compose
         env:
           CONFIG_DIR: ${{ vars.CONFIG_DIR }}

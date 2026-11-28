@@ -13,7 +13,7 @@ log = logging.getLogger("energy_hub.db")
 # One schema, no migration chain: the project is in development and there is no installed base.
 # Bump SCHEMA_VERSION when the layout changes. A database of another version (an older development
 # layout) is dropped and recreated, which also discards its data.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA = """
 CREATE TABLE sites(
     id TEXT PRIMARY KEY,
@@ -36,11 +36,11 @@ CREATE TABLE entities(
     source TEXT NOT NULL,
     PRIMARY KEY(site_id, key)
 );
-CREATE TABLE fixed_values(
+CREATE TABLE static_values(
     site_id TEXT NOT NULL,
     instance TEXT NOT NULL,
     sensor_id TEXT NOT NULL,
-    value REAL NOT NULL,
+    value TEXT,
     PRIMARY KEY(site_id, instance, sensor_id)
 );
 CREATE TABLE buckets(
@@ -57,7 +57,7 @@ CREATE TABLE buckets(
 ) WITHOUT ROWID;
 CREATE INDEX idx_buckets_ts ON buckets(ts_min);
 """
-_TABLES = ("buckets", "fixed_values", "entities", "devices", "sites")
+_TABLES = ("buckets", "static_values", "fixed_values", "entities", "devices", "sites")
 
 # (site_id, key, ts_min, delta, last, min, avg_sum, max, n)
 BucketRow = tuple
@@ -147,12 +147,13 @@ class Database:
             )
         return out
 
-    # ---- devices, entities, fixed values -----------------------------------
+    # ---- devices, entities, static values ----------------------------------
     async def replace_config(self, site_id: str, instances: Sequence[dict]) -> dict[str, list[str]]:
         """Make the stored instances of a site match `instances` (the protocol `config` message).
 
-        Each instance is {id, device, name, sensors: {sensor_id: {"source": str} | {"fixed": float}}}.
-        Instances and sensors that are gone are deleted together with their history. Returns
+        Each instance is {id, device, name, sensors: {sensor_id: {"source": str} | {"static": True}}}.
+        Instances and sensors that are gone are deleted together with their history (and a static
+        slot with its value). A static slot that stays keeps its value. Returns
         {"instances": [...removed instance ids], "sensors": [...removed "instance.sensor" of
         instances that still exist]}.
         """
@@ -161,27 +162,32 @@ class Database:
         cur = await self.conn.execute("SELECT key, instance, sensor_id FROM entities WHERE site_id=?", (site_id,))
         old_entities = {r["key"]: r["instance"] for r in await cur.fetchall()}
         cur = await self.conn.execute(
-            "SELECT instance, sensor_id FROM fixed_values WHERE site_id=?", (site_id,))
-        old_fixed = {f"{r['instance']}.{r['sensor_id']}": r["instance"] for r in await cur.fetchall()}
+            "SELECT instance, sensor_id FROM static_values WHERE site_id=?", (site_id,))
+        old_static = {f"{r['instance']}.{r['sensor_id']}": r["instance"] for r in await cur.fetchall()}
 
         new_instances = {i["id"] for i in instances}
-        new_keys: set[str] = set()          # every sensor entry (source or fixed)
-        new_source_keys: set[str] = set()   # entries that have a source, i.e. that carry data
+        new_keys: set[str] = set()          # every sensor entry (entity or static)
+        new_source_keys: set[str] = set()   # entity entries: they carry a series
+        new_static_keys: set[str] = set()   # static entries: they carry one value
         for inst in instances:
             for sid, entry in inst["sensors"].items():
-                new_keys.add(f"{inst['id']}.{sid}")
-                if "source" in entry:
-                    new_source_keys.add(f"{inst['id']}.{sid}")
+                key = f"{inst['id']}.{sid}"
+                new_keys.add(key)
+                (new_static_keys if entry.get("static") else new_source_keys).add(key)
 
         removed_instances = sorted(old_instances - new_instances)
         removed_sensors = sorted(
-            k for k, inst in {**old_entities, **old_fixed}.items()
+            k for k, inst in {**old_entities, **old_static}.items()
             if k not in new_keys and inst in new_instances)
 
         for key in [k for k in old_entities if k not in new_source_keys]:
             await self.conn.execute("DELETE FROM entities WHERE site_id=? AND key=?", (site_id, key))
             await self.conn.execute("DELETE FROM buckets WHERE site_id=? AND key=?", (site_id, key))
-        await self.conn.execute("DELETE FROM fixed_values WHERE site_id=?", (site_id,))
+        for key, instance in old_static.items():
+            if key not in new_static_keys:
+                await self.conn.execute(
+                    "DELETE FROM static_values WHERE site_id=? AND instance=? AND sensor_id=?",
+                    (site_id, instance, key[len(instance) + 1:]))
         for inst_id in removed_instances:
             await self.conn.execute("DELETE FROM devices WHERE site_id=? AND instance=?", (site_id, inst_id))
 
@@ -192,17 +198,38 @@ class Database:
                 (site_id, inst["id"], inst["device"], inst["name"]))
             for sid, entry in inst["sensors"].items():
                 key = f"{inst['id']}.{sid}"
-                if "source" in entry:
+                if entry.get("static"):
+                    await self.conn.execute(      # a slot that is already there keeps its value
+                        "INSERT INTO static_values(site_id,instance,sensor_id,value) VALUES(?,?,?,NULL) "
+                        "ON CONFLICT(site_id,instance,sensor_id) DO NOTHING",
+                        (site_id, inst["id"], sid))
+                else:
                     await self.conn.execute(
                         "INSERT INTO entities(site_id,key,instance,sensor_id,source) VALUES(?,?,?,?,?) "
                         "ON CONFLICT(site_id,key) DO UPDATE SET source=excluded.source",
                         (site_id, key, inst["id"], sid, entry["source"]))
-                else:
-                    await self.conn.execute(
-                        "INSERT INTO fixed_values(site_id,instance,sensor_id,value) VALUES(?,?,?,?)",
-                        (site_id, inst["id"], sid, float(entry["fixed"])))
         await self.conn.commit()
         return {"instances": removed_instances, "sensors": removed_sensors}
+
+    async def set_static_values(self, site_id: str, updates: Sequence[tuple[str, str, object]]) -> int:
+        """Store static values, applied in order (the last one for a slot wins), in one transaction.
+
+        `updates` holds (instance, sensor id, value). The value is stored as JSON, so 0, false and
+        "" keep their type. Only registered slots are updated. Returns how many updates were stored.
+        If the write fails nothing is kept and the exception propagates.
+        """
+        stored = 0
+        try:
+            for instance, sensor_id, value in updates:
+                cur = await self.conn.execute(
+                    "UPDATE static_values SET value=? WHERE site_id=? AND instance=? AND sensor_id=?",
+                    (json.dumps(value), site_id, instance, sensor_id))
+                stored += 1 if cur.rowcount > 0 else 0
+            await self.conn.commit()
+        except Exception:
+            await self.conn.rollback()
+            raise
+        return stored
 
     async def list_instances(self, site_id: str) -> list[dict]:
         cur = await self.conn.execute(
@@ -214,11 +241,14 @@ class Database:
             "SELECT key, instance, sensor_id, source FROM entities WHERE site_id=? ORDER BY key", (site_id,))
         return [dict(r) for r in await cur.fetchall()]
 
-    async def list_fixed(self, site_id: str) -> list[dict]:
+    async def list_static(self, site_id: str) -> list[dict]:
+        """The static slots of a site: {instance, sensor_id, value}, value being decoded JSON or None."""
         cur = await self.conn.execute(
-            "SELECT instance, sensor_id, value FROM fixed_values WHERE site_id=? ORDER BY instance, sensor_id",
+            "SELECT instance, sensor_id, value FROM static_values WHERE site_id=? ORDER BY instance, sensor_id",
             (site_id,))
-        return [dict(r) for r in await cur.fetchall()]
+        return [{"instance": r["instance"], "sensor_id": r["sensor_id"],
+                 "value": None if r["value"] is None else json.loads(r["value"])}
+                for r in await cur.fetchall()]
 
     # ---- buckets -------------------------------------------------------
     async def upsert_buckets(self, rows: Iterable[BucketRow]) -> None:

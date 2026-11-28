@@ -13,7 +13,7 @@ from typing import Callable
 
 Values = dict[str, float]
 
-# (instance id, device type, name, {sensor id: reader of the simulation values}, {sensor id: fixed number})
+# (instance id, device type, name, {sensor id: reader of the simulation values}, {sensor id: static value})
 SPECS: list[tuple[str, str, str, dict[str, Callable[[Values], float]], dict[str, float]]] = [
     ("meter", "electricitymeter", "Electricity Meter", {
         "energy_import": lambda v: v["grid_import"],
@@ -21,7 +21,8 @@ SPECS: list[tuple[str, str, str, dict[str, Callable[[Values], float]], dict[str,
         "power_import": lambda v: max(v["grid_power"], 0.0),
         "power_export": lambda v: max(-v["grid_power"], 0.0),
         "price_import": lambda v: v["price"],
-    }, {"price_export": 0.10}),
+        "price_export": lambda v: 0.10,
+    }, {}),
     ("roof-south", "solar_inverter", "Roof south", {
         "energy": lambda v: v["solar"] * 0.6, "power": lambda v: v["solar_power"] * 0.6}, {}),
     ("roof-north", "solar_inverter", "Roof north", {
@@ -36,7 +37,8 @@ SPECS: list[tuple[str, str, str, dict[str, Callable[[Values], float]], dict[str,
         "power": lambda v: v["battery_power"] * 0.5,
         "energy_charged": lambda v: v["battery_in"] * 0.5,
         "energy_discharged": lambda v: v["battery_out"] * 0.5}, {"capacity": 5000.0}),
-    ("gas", "gasmeter", "Gas", {"consumption": lambda v: v["gas"]}, {"price": 1.62}),
+    ("gas", "gasmeter", "Gas", {
+        "consumption": lambda v: v["gas"], "price": lambda v: 1.62}, {}),
     ("plug-car", "consumer_device", "Car charger", {
         "energy": lambda v: v["dev_car"], "power": lambda v: v["p_car"]}, {}),
     ("plug-aircon", "consumer_device", "Aircon attic", {
@@ -59,21 +61,26 @@ SPECS: list[tuple[str, str, str, dict[str, Callable[[Values], float]], dict[str,
 def config_message(currency: str = "EUR") -> dict:
     """The protocol `config` message for this household."""
     instances = []
-    for iid, device, name, readers, fixed in SPECS:
+    for iid, device, name, readers, statics in SPECS:
         sensors = {sid: {"source": f"sim.{iid}.{sid}"} for sid in readers}
-        sensors.update({sid: {"fixed": value} for sid, value in fixed.items()})
+        sensors.update({sid: {"source": "static"} for sid in statics})
         instances.append({"id": iid, "device": device, "name": name, "sensors": sensors})
     return {"type": "config", "currency": currency, "instances": instances}
 
 
+def static_values() -> dict[str, float]:
+    """{key: value} of the static slots, to be sent once in `states` messages."""
+    return {f"{iid}.{sid}": value for iid, _d, _n, _r, statics in SPECS for sid, value in statics.items()}
+
+
 def keys() -> list[str]:
     """Keys (<instance>.<sensor>) of every sensor that carries readings."""
-    return [f"{iid}.{sid}" for iid, _d, _n, readers, _f in SPECS for sid in readers]
+    return [f"{iid}.{sid}" for iid, _d, _n, readers, _s in SPECS for sid in readers]
 
 
 def readings(values: Values) -> dict[str, float]:
     """Simulation values -> {key: reading}."""
-    return {f"{iid}.{sid}": read(values) for iid, _d, _n, readers, _f in SPECS for sid, read in readers.items()}
+    return {f"{iid}.{sid}": read(values) for iid, _d, _n, readers, _s in SPECS for sid, read in readers.items()}
 
 
 class Sim:

@@ -15,7 +15,7 @@ async def test_fresh_database_gets_the_current_schema(tmp_path):
     db = Database(str(tmp_path / "a.db"))
     await db.connect()
     try:
-        assert await tables(db) == ["buckets", "devices", "entities", "fixed_values", "sites"]
+        assert await tables(db) == ["buckets", "devices", "entities", "sites", "static_values"]
         cur = await db.conn.execute("PRAGMA user_version")
         assert (await cur.fetchone())[0] == SCHEMA_VERSION
     finally:

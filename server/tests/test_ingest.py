@@ -5,8 +5,13 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 import protocol_schemas as ps
+import yaml
+from fastapi.testclient import TestClient
+
 from app import ingest
-from conftest import CABIN_TOKEN, HOME_TOKEN
+from app.devices import parse_catalogue
+from app.main import create_app
+from conftest import CABIN_TOKEN, EXAMPLE_DIR, HOME_TOKEN, make_config
 
 
 class Conn:
@@ -57,7 +62,7 @@ BATTERY = {"id": "battery-1", "device": "battery", "name": "Battery 1", "sensors
     "energy_charged": {"source": "sensor.b1_in"}}}
 METER = {"id": "electricity-meter", "device": "electricitymeter", "name": "Electricity Meter", "sensors": {
     "energy_import": {"source": "sensor.p1_import"},
-    "price_import": {"fixed": 0.25}}}
+    "price_import": {"source": "sensor.tariff"}}}
 PLUG = {"id": "plug-car", "device": "consumer_device", "name": "Car charger", "sensors": {
     "energy": {"source": "sensor.car_energy"}}}
 
@@ -97,10 +102,14 @@ def test_hello_carries_version_limits_time_and_the_catalogue(client):
     assert set(devices) == {"heatpump", "solar_inverter", "battery", "gasmeter", "watermeter",
                             "electricitymeter", "consumer_device", "water_heater"}
     soc = next(s for s in devices["battery"]["sensors"] if s["id"] == "state_of_charge")
-    assert (soc["kind"], soc["unit"], soc["allow_fixed"]) == ("gauge", "%", False)
-    assert soc["selector"] == {"domain": ["sensor"], "device_class": ["battery"]}
+    assert (soc["kind"], soc["unit"]) == ("gauge", "%")
+    assert soc["selector"] == {"entity": {"domain": "sensor", "device_class": "battery"}}
+    cap = next(s for s in devices["battery"]["sensors"] if s["id"] == "capacity")
+    assert cap["selector"] == {"number": {"min": 0, "max": 100000, "step": 0.1,
+                                          "unit_of_measurement": "Wh", "mode": "box"}}
     price = next(s for s in devices["electricitymeter"]["sensors"] if s["id"] == "price_import")
-    assert price["allow_fixed"] is True
+    assert price["selector"] == {"entity": {"domain": "sensor"}}
+    assert "allow_fixed" not in json.dumps(hello) and "fixed_only" not in json.dumps(hello)
     assert "role" not in json.dumps(hello)                       # roles are server-internal
 
 
@@ -115,27 +124,61 @@ def test_config_is_stored_and_acknowledged(client):
     ents = {r["key"]: r["source"] for r in db_rows(client, "SELECT * FROM entities")}
     assert ents == {"battery-1.state_of_charge": "sensor.b1_soc", "battery-1.power": "sensor.b1_power",
                     "battery-1.energy_charged": "sensor.b1_in",
-                    "electricity-meter.energy_import": "sensor.p1_import"}
-    fixed = db_rows(client, "SELECT instance, sensor_id, value FROM fixed_values")
-    assert fixed == [{"instance": "electricity-meter", "sensor_id": "price_import", "value": 0.25}]
+                    "electricity-meter.energy_import": "sensor.p1_import",
+                    "electricity-meter.price_import": "sensor.tariff"}
+    assert db_rows(client, "SELECT * FROM static_values") == []
     sites = {s["id"]: s for s in client.app.state.db.__class__ and
              client.portal.call(client.app.state.db.list_sites)}
     assert sites["home"]["meta"] == {"currency": "EUR"}
 
 
-def test_battery_capacity_accepts_a_fixed_number(client):
-    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 10000}}}
+CAP = {"source": "static"}
+
+
+def with_capacity(**extra):
+    return {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": CAP, **extra}}
+
+
+def static_rows(client):
+    return db_rows(client, "SELECT instance, sensor_id, value FROM static_values ORDER BY instance, sensor_id")
+
+
+def test_a_static_slot_is_registered_with_the_static_marker(client):
     with opened(client) as c:
-        ack = c.call(config(battery))
+        ack = c.call(config(with_capacity()))
     assert ack["type"] == "ack" and ack["sensors"] == 4
-    fixed = db_rows(client, "SELECT instance, sensor_id, value FROM fixed_values")
-    assert fixed == [{"instance": "battery-1", "sensor_id": "capacity", "value": 10000.0}]
+    assert static_rows(client) == [{"instance": "battery-1", "sensor_id": "capacity", "value": None}]
+    keys = {r["key"] for r in db_rows(client, "SELECT key FROM entities")}
+    assert "battery-1.capacity" not in keys                     # a static slot has no series
+    assert "static" not in {r["source"] for r in db_rows(client, "SELECT source FROM entities")}
 
 
-def test_battery_capacity_at_the_limit_is_accepted(client):
-    battery = {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": {"fixed": 100000}}}
+def test_a_resent_config_keeps_the_stored_static_value(client):
     with opened(client) as c:
-        assert c.call(config(battery))["type"] == "ack"
+        c.call(config(with_capacity()))
+        assert c.call({"type": "states", "items": [{"key": "battery-1.capacity", "value": 13500}]})["accepted"] == 1
+        c.call(config(with_capacity()))
+    assert static_rows(client) == [{"instance": "battery-1", "sensor_id": "capacity", "value": "13500.0"}]
+
+
+def test_a_static_slot_that_is_taken_out_loses_its_value(client):
+    with opened(client) as c:
+        c.call(config(with_capacity()))
+        c.call({"type": "states", "items": [{"key": "battery-1.capacity", "value": 13500}]})
+        ack = c.call(config(BATTERY))
+        assert ack["removed"] == {"instances": [], "sensors": ["battery-1.capacity"]}
+        assert static_rows(client) == []
+        c.call(config(with_capacity()))                         # added again: starts empty
+    assert static_rows(client) == [{"instance": "battery-1", "sensor_id": "capacity", "value": None}]
+
+
+def test_removing_an_instance_removes_its_static_values(client):
+    with opened(client) as c:
+        c.call(config(with_capacity(), {**with_capacity(), "id": "battery-2", "name": "B2"}))
+        c.call({"type": "states", "items": [{"key": "battery-2.capacity", "value": 5000}]})
+        ack = c.call(config(with_capacity()))
+    assert ack["removed"] == {"instances": ["battery-2"], "sensors": []}
+    assert [r["instance"] for r in static_rows(client)] == ["battery-1"]
 
 
 @pytest.mark.parametrize("bad,path,fragment", [
@@ -156,26 +199,22 @@ def test_battery_capacity_at_the_limit_is_accepted(client):
      "instances[0].sensors.power", "must be an object"),
     ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {}}}]},
      "instances[0].sensors.power", "needs a 'source'"),
-    ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {"source": "x", "fixed": 1}}}]},
-     "instances[0].sensors.power", "not both"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {"fixed": 1}}}]},
+     "instances[0].sensors.power", "needs a 'source'"),
     ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {"source": ""}}}]},
      "instances[0].sensors.power.source", "1 to 255"),
-    ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {"fixed": 1}}}]},
-     "instances[0].sensors.power.fixed", "does not accept a fixed value"),
-    ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"fixed": -1}}}]},
-     "instances[0].sensors.price_import.fixed", "0 or more"),
-    ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"fixed": "1"}}}]},
-     "instances[0].sensors.price_import.fixed", "0 or more"),
-    ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"fixed": True}}}]},
-     "instances[0].sensors.price_import.fixed", "0 or more"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"power": {"source": "static"}}}]},
+     "instances[0].sensors.power.source", "takes an entity"),
     ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"source": "sensor.x"}}}]},
-     "instances[0].sensors.capacity.source", "takes only a fixed value"),
-    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": 0}}}]},
-     "instances[0].sensors.capacity.fixed", "greater than 0"),
-    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": -5}}}]},
-     "instances[0].sensors.capacity.fixed", "greater than 0"),
-    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": 100000.5}}}]},
-     "instances[0].sensors.capacity.fixed", "at most 100000"),
+     "instances[0].sensors.capacity.source", "static slot: its source must be 'static'"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"fixed": 10000}}}]},
+     "instances[0].sensors.capacity", "needs a 'source'"),
+    ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"fixed": 0.25}}}]},
+     "instances[0].sensors.price_import", "needs a 'source'"),
+    ({"type": "config", "instances": [{**METER, "sensors": {"price_import": {"source": "static"}}}]},
+     "instances[0].sensors.price_import.source", "takes an entity"),
+    ({"type": "config", "instances": [{**BATTERY, "sensors": {"capacity": {"source": 5}}}]},
+     "instances[0].sensors.capacity.source", "1 to 255"),
 ])
 def test_invalid_config_is_rejected_with_a_path_and_the_connection_stays_open(client, bad, path, fragment):
     with opened(client) as c:
@@ -220,7 +259,7 @@ def test_removing_instances_and_sensors_deletes_their_history(client):
             {"key": "battery-2.power", "ts": now, "value": 2.0},
             {"key": "battery-2.energy_charged", "ts": now, "value": 3.0}]})
         flush(client)
-        # battery-2 disappears; battery-1 loses a sensor and the fixed price goes too
+        # battery-2 disappears; battery-1 loses a sensor and the meter loses its price sensor
         slim = {**BATTERY, "sensors": {"power": {"source": "sensor.b1_power"}}}
         meter = {**METER, "sensors": {"energy_import": {"source": "sensor.p1_import"}}}
         ack = c.call(config(slim, meter))
@@ -229,22 +268,21 @@ def test_removing_instances_and_sensors_deletes_their_history(client):
         "sensors": ["battery-1.energy_charged", "battery-1.state_of_charge", "electricity-meter.price_import"]}
     assert {r["key"] for r in db_rows(client, "SELECT DISTINCT key FROM buckets")} == {"battery-1.power"}
     assert {r["instance"] for r in db_rows(client, "SELECT * FROM devices")} == {"battery-1", "electricity-meter"}
-    assert db_rows(client, "SELECT * FROM fixed_values") == []
+    assert static_rows(client) == []
 
 
-def test_switching_a_sensor_from_source_to_fixed_drops_its_data(client):
+def test_changing_the_source_of_a_sensor_keeps_its_history(client):
     now = time.time()
     with opened(client) as c:
-        c.call(config(METER | {"sensors": {"energy_import": {"source": "sensor.x"},
-                                           "price_import": {"source": "sensor.price"}}}))
+        c.call(config(METER))
         c.call({"type": "states", "items": [{"key": "electricity-meter.price_import", "ts": now, "value": 0.3}]})
         flush(client)
         ack = c.call(config(METER | {"sensors": {"energy_import": {"source": "sensor.x"},
-                                                 "price_import": {"fixed": 0.4}}}))
-    assert ack["removed"] == {"instances": [], "sensors": []}        # still there, just a different kind
-    assert db_rows(client, "SELECT key FROM entities") == [{"key": "electricity-meter.energy_import"}]
-    assert db_rows(client, "SELECT * FROM buckets WHERE key='electricity-meter.price_import'") == []
-    assert db_rows(client, "SELECT value FROM fixed_values") == [{"value": 0.4}]
+                                                 "price_import": {"source": "sensor.other_tariff"}}}))
+    assert ack["removed"] == {"instances": [], "sensors": []}
+    sources = {r["key"]: r["source"] for r in db_rows(client, "SELECT key, source FROM entities")}
+    assert sources["electricity-meter.price_import"] == "sensor.other_tariff"
+    assert len(db_rows(client, "SELECT * FROM buckets WHERE key='electricity-meter.price_import'")) == 1
 
 
 def test_renaming_an_instance_keeps_its_history(client):
@@ -306,13 +344,6 @@ def test_nan_and_infinity_are_rejected(client):
     assert ack["accepted"] == 0 and ack["rejected"] == 2
 
 
-def test_a_fixed_value_has_no_key_to_send_to(client):
-    with opened(client) as c:
-        c.call(config(METER))
-        ack = c.call({"type": "states", "items": [{"key": "electricity-meter.price_import", "value": 1}]})
-    assert ack["accepted"] == 0 and ack["unknown_keys"] == ["electricity-meter.price_import"]
-
-
 def test_only_declared_keys_are_accepted_and_unknown_keys_are_capped(client):
     with opened(client) as c:
         c.call(config(BATTERY))
@@ -333,6 +364,220 @@ def test_the_server_remembers_the_config_after_a_reconnect(client):
     with opened(client) as c:                                           # no new config
         ack = c.call({"type": "states", "items": [{"key": "battery-1.power", "ts": now, "value": 5}]})
     assert ack["accepted"] == 1
+
+
+# ---- static values in states -------------------------------------------------------------------
+THERMOSTAT = {"id": "thermostat", "name": "Thermostat", "description": "Test device with static slots.",
+              "sensors": [
+                  {"id": "temp", "name": "Temperature", "selector": {"entity": {"domain": "sensor"}}},
+                  {"id": "target", "name": "Target", "selector": {"number": {"min": 0, "max": 30}}},
+                  {"id": "mode", "name": "Mode", "selector": {"select": {"options": ["auto", "on", "off"]}}},
+                  {"id": "enabled", "name": "Enabled", "selector": {"boolean": {}}}]}
+STAT = {"id": "t-1", "device": "thermostat", "name": "Hall", "sensors": {
+    "temp": {"source": "sensor.hall_temp"}, "target": CAP, "mode": CAP, "enabled": CAP}}
+
+
+def catalogue_with_thermostat():
+    data = yaml.safe_load((EXAMPLE_DIR / "devices.yaml").read_text())
+    data["devices"].append(THERMOSTAT)
+    return parse_catalogue(data)
+
+
+@pytest.fixture
+def sclient(tmp_path):
+    cfg = make_config(str(tmp_path / "s.db"), catalogue=catalogue_with_thermostat())
+    with TestClient(create_app(cfg, retention_interval=3600)) as c:
+        yield c
+
+
+def stored(client):
+    return {f"{r['instance']}.{r['sensor_id']}": r["value"] for r in static_rows(client)}
+
+
+def state(key, value, **extra):
+    return {"type": "states", "items": [{"key": key, "value": value, **extra}]}
+
+
+def test_a_static_number_is_stored_and_acknowledged(client):
+    with opened(client) as c:
+        c.call(config(with_capacity()))
+        ack = c.call(state("battery-1.capacity", 13.5, ts=1730000000))     # ts is ignored
+    assert ack == {"type": "ack", "for": "states", "accepted": 1, "rejected": 0}
+    assert stored(client) == {"battery-1.capacity": "13.5"}
+
+
+def test_the_handoff_example_message_works(sclient):
+    msg = {"type": "states", "items": [
+        {"key": "t-1.target", "ts": 1730000000, "value": 13.5},
+        {"key": "t-1.enabled", "ts": 1730000000, "value": False},
+        {"key": "t-1.mode", "ts": 1730000000, "value": "auto"}]}
+    ps.validate_client_message(msg)
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        ack = c.call(msg)
+    assert ack == {"type": "ack", "for": "states", "accepted": 3, "rejected": 0}
+    assert stored(sclient) == {"t-1.target": "13.5", "t-1.enabled": "false", "t-1.mode": '"auto"'}
+
+
+def test_zero_false_and_empty_values_are_real_values(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        assert c.call(state("t-1.target", 0))["accepted"] == 1
+        assert c.call(state("t-1.enabled", False))["accepted"] == 1
+    assert stored(sclient) == {"t-1.target": "0.0", "t-1.enabled": "false", "t-1.mode": None}
+    model = sclient.portal.call(load_model, sclient)
+    values = {v.sensor.id: v.value for v in model.statics}
+    assert values["target"] == 0.0 and values["target"] is not None
+    assert values["enabled"] is False
+    assert values["mode"] is None
+
+
+async def load_model(client):
+    from app.model import load_site_model
+    st = client.app.state
+    return await load_site_model(st.db, st.config.catalogue, "home")
+
+
+@pytest.mark.parametrize("key,value", [
+    ("t-1.target", -1), ("t-1.target", 30.5), ("t-1.target", "20"), ("t-1.target", True),
+    ("t-1.target", None), ("t-1.target", [1]),
+    ("t-1.mode", "heat"), ("t-1.mode", 1), ("t-1.mode", False), ("t-1.mode", ""),
+    ("t-1.enabled", 0), ("t-1.enabled", 1), ("t-1.enabled", "true"), ("t-1.enabled", None),
+])
+def test_values_that_do_not_fit_the_selector_are_rejected_and_not_stored(sclient, key, value):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        ack = c.call(state(key, value))
+    assert ack == {"type": "ack", "for": "states", "accepted": 0, "rejected": 1}
+    assert stored(sclient)[key] is None
+
+
+def test_nan_and_infinity_are_rejected_for_a_static_number(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        c.send_text('{"type": "states", "items": [{"key": "t-1.target", "value": NaN},'
+                    ' {"key": "t-1.target", "value": Infinity}]}')
+        ack = c.recv()
+    assert ack["accepted"] == 0 and ack["rejected"] == 2
+
+
+def test_a_rejected_value_leaves_the_previous_one_in_force(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        c.call(state("t-1.target", 21))
+        assert c.call(state("t-1.target", 99))["rejected"] == 1
+    assert stored(sclient)["t-1.target"] == "21.0"
+
+
+def test_a_repeated_value_is_accepted_each_time(client):
+    with opened(client) as c:
+        c.call(config(with_capacity()))
+        for _ in range(3):
+            assert c.call(state("battery-1.capacity", 10000))["accepted"] == 1
+    assert stored(client) == {"battery-1.capacity": "10000.0"}
+
+
+def test_the_latest_value_wins_in_receive_order(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        ack = c.call({"type": "states", "items": [
+            {"key": "t-1.target", "value": 10}, {"key": "t-1.target", "value": 99},      # 99 is rejected
+            {"key": "t-1.target", "value": 20}, {"key": "t-1.mode", "value": "on"},
+            {"key": "t-1.mode", "value": "off"}]})
+        assert (ack["accepted"], ack["rejected"]) == (4, 1)
+        assert stored(sclient)["t-1.target"] == "20.0" and stored(sclient)["t-1.mode"] == '"off"'
+        c.call(state("t-1.target", 5))                          # a later message overwrites an earlier one
+        c.call(state("t-1.target", 7))
+    assert stored(sclient)["t-1.target"] == "7.0"
+
+
+def test_acks_follow_the_order_of_the_messages(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        msgs = [state("t-1.target", 1), state("t-1.target", 99), state("t-1.enabled", True), {"type": "ping"},
+                state("t-1.mode", "nope")]
+        for m in msgs:
+            c.send(m)
+        replies = [c.recv() for _ in msgs]
+    assert [(r.get("accepted"), r.get("rejected")) for r in replies] == [
+        (1, 0), (0, 1), (1, 0), (None, None), (0, 1)]
+    assert replies[3] == {"type": "pong"}
+
+
+def test_a_mixed_batch_of_readings_and_static_values(sclient):
+    now = time.time()
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        ack = c.call({"type": "states", "items": [
+            {"key": "t-1.temp", "ts": now, "value": 19.5},
+            {"key": "t-1.target", "value": 21},
+            {"key": "t-1.temp", "ts": now, "value": "warm"},              # readings stay numeric
+            {"key": "t-1.enabled", "value": True},
+            {"key": "t-1.nothing", "value": 1}]})
+    assert ack == {"type": "ack", "for": "states", "accepted": 3, "rejected": 2, "unknown_keys": ["t-1.nothing"]}
+    flush(sclient)
+    assert [r["key"] for r in db_rows(sclient, "SELECT key FROM buckets")] == ["t-1.temp"]   # no series for static
+
+
+def test_a_static_value_needs_no_timestamp_and_ignores_a_bad_one(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        ack = c.call({"type": "states", "items": [
+            {"key": "t-1.target", "value": 5, "ts": "yesterday"}, {"key": "t-1.target", "value": 6, "ts": 1}]})
+    assert ack["accepted"] == 2
+    assert stored(sclient)["t-1.target"] == "6.0"
+
+
+def test_an_entity_reading_cannot_be_sent_for_an_unregistered_static_key(sclient):
+    with opened(sclient) as c:
+        c.call(config({**STAT, "sensors": {"temp": {"source": "sensor.t"}}}))      # statics not declared
+        ack = c.call(state("t-1.target", 5))
+    assert ack["accepted"] == 0 and ack["unknown_keys"] == ["t-1.target"]
+
+
+def test_static_values_survive_a_reconnect(sclient):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        c.call(state("t-1.target", 22))
+    with opened(sclient) as c:                                  # no new config
+        assert c.call(state("t-1.mode", "auto"))["accepted"] == 1    # the slot is known right away
+    assert stored(sclient) == {"t-1.target": "22.0", "t-1.mode": '"auto"', "t-1.enabled": None}
+
+
+def test_static_values_survive_a_server_restart(tmp_path):
+    db = str(tmp_path / "r.db")
+    cat = catalogue_with_thermostat()
+    with TestClient(create_app(make_config(db, catalogue=cat), retention_interval=3600)) as c1:
+        with opened(c1) as c:
+            c.call(config(STAT))
+            c.call(state("t-1.target", 22.5))
+            c.call(state("t-1.enabled", False))
+    with TestClient(create_app(make_config(db, catalogue=cat), retention_interval=3600)) as c2:
+        assert stored(c2) == {"t-1.target": "22.5", "t-1.enabled": "false", "t-1.mode": None}
+        model = c2.portal.call(load_model, c2)
+        assert {v.sensor.id: v.value for v in model.statics} == {"target": 22.5, "enabled": False, "mode": None}
+
+
+def test_a_stored_value_that_no_longer_fits_the_catalogue_is_ignored_with_a_warning(sclient, caplog):
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        c.call(state("t-1.mode", "on"))
+    sclient.portal.call(lambda: sclient.app.state.db.conn.execute(
+        "UPDATE static_values SET value='\"retired\"' WHERE sensor_id='mode'"))
+    with caplog.at_level("WARNING"):
+        model = sclient.portal.call(load_model, sclient)
+    assert {v.sensor.id: v.value for v in model.statics}["mode"] is None
+    assert "stored value of t-1.mode ignored" in caplog.text
+
+
+def test_a_failed_write_is_rejected_not_acknowledged(sclient, monkeypatch):
+    async def boom(*_a, **_k):
+        raise RuntimeError("disk full")
+    with opened(sclient) as c:
+        c.call(config(STAT))
+        monkeypatch.setattr(sclient.app.state.db, "set_static_values", boom)
+        ack = c.call(state("t-1.target", 5))
+    assert ack == {"type": "ack", "for": "states", "accepted": 0, "rejected": 1}
 
 
 # ---- protocol hygiene ---------------------------------------------------------------------------
@@ -410,6 +655,6 @@ def test_clients_messages_in_the_documented_examples_work_against_the_server(cli
             if msg["type"] == "config":
                 assert reply["for"] == "config" and reply["instances"] == 2
             elif msg["type"] == "states":
-                assert reply["accepted"] == 4 and reply["rejected"] == 0
+                assert reply["accepted"] == len(msg["items"]) and reply["rejected"] == 0
             else:
                 assert reply == {"type": "pong"}

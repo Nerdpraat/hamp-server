@@ -78,16 +78,44 @@ class Session:
             return err.rcvd.code if err.rcvd else None
 
 
+def is_static(sensor: dict) -> bool:
+    """A static slot has a number, select or boolean selector: the client sends the value itself."""
+    return "entity" not in sensor["selector"]
+
+
 def sample_instances(hello: dict, count: int = 3) -> tuple[list[dict], dict[str, str]]:
-    """Instances built from the server's own catalogue: the first sensor of the first devices."""
+    """Instances built from the server's own catalogue: the first two entity sensors of the first devices."""
     instances, kinds = [], {}
-    for dev in hello["devices"][:count]:
-        sensors = {s["id"]: {"source": f"check.{dev['id']}.{s['id']}"} for s in dev["sensors"][:2]}
+    for dev in hello["devices"]:
+        entity_sensors = [s for s in dev["sensors"] if not is_static(s)][:2]
+        if not entity_sensors:
+            continue
+        if len(instances) >= count:
+            break
+        sensors = {s["id"]: {"source": f"check.{dev['id']}.{s['id']}"} for s in entity_sensors}
         iid = f"check-{dev['id']}"[:40].replace("_", "-")
         instances.append({"id": iid, "device": dev["id"], "name": f"Check {dev['name']}", "sensors": sensors})
-        for s in dev["sensors"][:2]:
+        for s in entity_sensors:
             kinds[f"{iid}.{s['id']}"] = s["kind"]
     return instances, kinds
+
+
+def sample_static(selector: dict) -> tuple[list[object], list[object]]:
+    """(valid values, invalid values) for a static selector, derived from the selector alone."""
+    (kind, cfg), = selector.items()
+    if kind == "number":
+        lo, hi = cfg.get("min"), cfg.get("max")
+        good = [v for v in (lo, hi, ((lo or 0) + (hi if hi is not None else (lo or 0) + 10)) / 2) if v is not None]
+        bad: list[object] = ["12", True, None]
+        if hi is not None:
+            bad.append(hi + 1)
+        if lo is not None:
+            bad.append(lo - 1)
+        return good, bad
+    if kind == "select":
+        values = [o if isinstance(o, str) else o["value"] for o in cfg["options"]]
+        return values, [1, True] + ([] if cfg.get("custom_value") else ["not-an-option-" + "x" * 5])
+    return [True, False], [0, 1, "true", None]
 
 
 @dataclass
@@ -140,6 +168,44 @@ async def config_and_states_roundtrip(ctx: Ctx) -> None:
         # without a ts the server clock is used
         ack = await s.call({"type": "states", "items": [{"key": next(iter(kinds)), "value": 2}]})
         expect(ack["accepted"] == 1, "a reading without ts must be accepted")
+    finally:
+        await s.close()
+
+
+async def static_values_are_validated_and_acknowledged(ctx: Ctx) -> None:
+    s = await Session.open(ctx.url, ctx.key)
+    try:
+        statics = [(d, x) for d in s.hello["devices"] for x in d["sensors"] if is_static(x)]
+        if not statics:
+            print("      (the catalogue has no static slots: nothing to check)")
+            return
+        instances, sensors, keys = [], {}, []
+        for dev, sensor in statics:
+            iid = f"check-{dev['id']}"[:40].replace("_", "-") + "-static"
+            instances.append({"id": iid, "device": dev["id"], "name": f"Check {dev['name']}",
+                              "sensors": {sensor["id"]: {"source": "static"}}})
+            keys.append((f"{iid}.{sensor['id']}", sensor))
+        ack = await s.call({"type": "config", "instances": instances})
+        expect(ack.get("for") == "config" and ack["sensors"] == len(keys), f"static config not accepted: {ack}")
+        for key, sensor in keys:
+            good, bad = sample_static(sensor["selector"])
+            for value in good:
+                ack = await s.call({"type": "states", "items": [{"key": key, "value": value}]})
+                expect(ack == {"type": "ack", "for": "states", "accepted": 1, "rejected": 0},
+                       f"{key}: the valid value {value!r} must be accepted, got {ack}")
+            ack = await s.call({"type": "states", "items": [{"key": key, "value": good[0]}] * 2})
+            expect(ack["accepted"] == 2, f"{key}: repeating a value must be accepted, got {ack}")
+            for value in bad:
+                ack = await s.call({"type": "states", "items": [{"key": key, "value": value}]})
+                expect(ack == {"type": "ack", "for": "states", "accepted": 0, "rejected": 1},
+                       f"{key}: the invalid value {value!r} must be rejected, got {ack}")
+        expect((await s.call({"type": "ping"})) == {"type": "pong"}, "the connection must stay open")
+        entity = next((d for d in s.hello["devices"] for x in d["sensors"] if not is_static(x)), None)
+        if entity is not None:
+            sid = next(x["id"] for x in entity["sensors"] if not is_static(x))
+            err = await s.call({"type": "config", "instances": [{"id": "check-wrong-marker", "device": entity["id"],
+                                                                  "name": "x", "sensors": {sid: {"source": "static"}}}]})
+            expect(err.get("code") == "invalid_config", f"'static' on an entity slot must be refused, got {err}")
     finally:
         await s.close()
 
@@ -277,6 +343,7 @@ SCENARIOS: list[Callable[[Ctx], Awaitable[None]]] = [
     authentication_is_required,
     hello_describes_the_server,
     config_and_states_roundtrip,
+    static_values_are_validated_and_acknowledged,
     bad_readings_are_rejected_not_fatal,
     invalid_configs_are_refused_with_a_path,
     malformed_messages_get_error_codes,

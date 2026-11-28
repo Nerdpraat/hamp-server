@@ -1,6 +1,6 @@
 """A site's configured instances joined with the device catalogue.
 
-The database stores only what the client declared (instances, sensor sources, fixed values).
+The database stores only what the client declared (instances, sensor sources, static values).
 Roles, kinds, units, signs and colours come from the catalogue at read time, so editing
 devices.yaml takes effect immediately. Sensors or devices that were removed from the catalogue are
 skipped with a warning.
@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, field
 
 from .db import Database
-from .devices import Catalogue, ResolvedSensor
+from .devices import Catalogue, ResolvedSensor, StaticRejected, validate_static
 
 log = logging.getLogger("energy_hub.model")
 
@@ -49,10 +49,12 @@ class Entity:
 
 
 @dataclass(frozen=True)
-class FixedValue:
+class StaticValue:
+    """A static slot of an instance and the latest value the client sent (None: none yet)."""
+
     instance: str
     sensor: ResolvedSensor
-    value: float
+    value: float | str | bool | None
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,7 @@ class Instance:
     device_name: str
     category: str
     entities: list[Entity] = field(default_factory=list)
-    fixed: list[FixedValue] = field(default_factory=list)
+    statics: list[StaticValue] = field(default_factory=list)
 
     @property
     def generic(self) -> bool:
@@ -80,8 +82,8 @@ class SiteModel:
         return [e for i in self.instances for e in i.entities]
 
     @property
-    def fixed(self) -> list[FixedValue]:
-        return [f for i in self.instances for f in i.fixed]
+    def statics(self) -> list[StaticValue]:
+        return [v for i in self.instances for v in i.statics]
 
     def entity(self, key: str) -> Entity | None:
         return next((e for e in self.entities if e.key == key), None)
@@ -101,19 +103,30 @@ async def load_site_model(db: Database, catalogue: Catalogue, site_id: str) -> S
     for row in await db.list_entities(site_id):
         inst = instances.get(row["instance"])
         sensor = catalogue.sensor(inst.device, row["sensor_id"]) if inst else None
-        if inst is None or sensor is None:
+        if inst is None or sensor is None or sensor.static:
             if inst is not None:
-                log.warning("site %s: %s.%s is no longer in devices.yaml", site_id, row["instance"],
-                            row["sensor_id"])
+                log.warning("site %s: %s.%s is no longer an entity slot in devices.yaml", site_id,
+                            row["instance"], row["sensor_id"])
             continue
         inst.entities.append(Entity(
             row["key"], inst.id, inst.name, inst.device, inst.device_name, inst.category,
             sensor, row["source"]))
 
-    for row in await db.list_fixed(site_id):
+    for row in await db.list_static(site_id):
         inst = instances.get(row["instance"])
         sensor = catalogue.sensor(inst.device, row["sensor_id"]) if inst else None
-        if inst is not None and sensor is not None:
-            inst.fixed.append(FixedValue(inst.id, sensor, row["value"]))
+        if inst is None or sensor is None or not sensor.static:
+            if inst is not None:
+                log.warning("site %s: %s.%s is no longer a static slot in devices.yaml", site_id,
+                            row["instance"], row["sensor_id"])
+            continue
+        value = row["value"]
+        if value is not None:
+            try:                         # the catalogue may have changed since the value was stored
+                value = validate_static(sensor, value)
+            except StaticRejected as why:
+                log.warning("site %s: stored value of %s.%s ignored: %s", site_id, inst.id, sensor.id, why)
+                value = None
+        inst.statics.append(StaticValue(inst.id, sensor, value))
 
     return SiteModel(sorted(instances.values(), key=lambda i: (i.name.lower(), i.id)))

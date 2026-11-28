@@ -45,35 +45,54 @@
     },
     "sensor": {
       "type": "object",
-      "required": ["id", "name", "description", "kind", "unit", "allow_fixed", "selector"],
+      "required": ["id", "name", "description", "kind", "unit", "selector"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
         "name": {"type": "string", "minLength": 1},
         "description": {"type": "string"},
         "kind": {"enum": ["counter", "gauge"]},
         "unit": {"type": "string"},
-        "allow_fixed": {"type": "boolean"},
-        "fixed_only": {"type": "boolean"},
-        "selector": {
-          "type": "object",
-          "required": ["domain"],
-          "properties": {
-            "domain": {"type": "array", "items": {"type": "string"}},
-            "device_class": {"type": "array", "items": {"type": "string"}},
-            "number": {
-              "type": "object",
-              "properties": {
-                "min": {"type": "number"},
-                "max": {"type": "number"},
-                "step": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"const": "any"}]},
-                "unit_of_measurement": {"type": "string"},
-                "mode": {"enum": ["box", "slider"]}
-              },
-              "additionalProperties": false
-            }
-          }
-        }
+        "selector": {"$ref": "#/$defs/selector"}
       }
+    },
+    "selector": {
+      "description": "A native Home Assistant selector with exactly one type. `entity` slots take an entity; `number`, `select` and `boolean` slots are static: the client sends the value in `states`.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "entity": {"type": "object"},
+        "number": {
+          "type": "object",
+          "properties": {
+            "min": {"type": "number"},
+            "max": {"type": "number"},
+            "step": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"const": "any"}]},
+            "unit_of_measurement": {"type": "string"},
+            "mode": {"enum": ["box", "slider"]}
+          },
+          "additionalProperties": false
+        },
+        "select": {
+          "type": "object",
+          "required": ["options"],
+          "properties": {
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "oneOf": [
+                  {"type": "string"},
+                  {"type": "object", "required": ["value"], "properties": {"value": {"type": "string"}, "label": {"type": "string"}}}
+                ]
+              }
+            },
+            "custom_value": {"type": "boolean"}
+          }
+        },
+        "boolean": {"type": "object"}
+      },
+      "additionalProperties": false
     }
   }
 }

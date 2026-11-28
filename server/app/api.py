@@ -68,8 +68,8 @@ def _instance_json(inst: Instance) -> dict:
     sensors += [{
         "id": f.sensor.id, "key": None, "name": f.sensor.name, "role": f.sensor.role,
         "kind": f.sensor.kind, "unit": f.sensor.unit, "sign": f.sensor.sign,
-        "color": f.sensor.color, "group": f.sensor.group, "fixed": f.value,
-    } for f in inst.fixed]
+        "color": f.sensor.color, "group": f.sensor.group, "fixed": f.value,   # a static value
+    } for f in inst.statics]
     return {"id": inst.id, "name": inst.name, "device": inst.device, "device_name": inst.device_name,
             "category": inst.category, "generic": inst.generic, "sensors": sensors}
 
@@ -145,8 +145,8 @@ def overview_for_site(model: SiteModel, values: dict[str, list[float]], now: flo
     imp, exp = collect("grid_power_import"), collect("grid_power_export")
     solar, bat, soc = collect("solar_power"), collect("battery_power"), collect("battery_soc")
 
-    capacity = {f.instance: f.value for f in model.fixed
-                if f.sensor.role == "battery_capacity" and f.value > 0}
+    capacity = {v.instance: v.value for v in model.statics
+                if v.sensor.role == "battery_capacity" and isinstance(v.value, float) and v.value > 0}
     stored = [calc.stored_kwh(v, capacity[e.instance]) for e in model.entities
               if e.role == "battery_soc" and e.instance in capacity and (v := fresh(e)) is not None]
 
@@ -220,15 +220,9 @@ async def series(request: Request, site_id: str, start: int = Query(ge=0), end: 
     return {"start": start, "end": end, "step": step, "series": result}
 
 
-def _price_ref(inst: Instance, role: str) -> tuple[str, float | str] | None:
-    """The instance's price for `role`: a fixed number or the key of a price sensor."""
-    for f in inst.fixed:
-        if f.sensor.role == role:
-            return "fixed", f.value
-    for e in inst.entities:
-        if e.role == role:
-            return "key", e.key
-    return None
+def _price_key(inst: Instance, role: str) -> str | None:
+    """The key of the instance's price sensor for `role`."""
+    return next((e.key for e in inst.entities if e.role == role), None)
 
 
 async def _collect(request: Request, site_id: str, start: int, end: int):
@@ -244,13 +238,11 @@ async def _collect(request: Request, site_id: str, start: int, end: int):
         energy = totals.get(e.key, 0.0)
         cost = None
         price_role = PRICE_ROLE_FOR.get(e.role)
-        ref = _price_ref(instances[e.instance], price_role) if price_role else None
-        if ref and ref[0] == "fixed":
-            cost = calc.cost_for([(0, energy)], fixed=ref[1])
-        elif ref:
-            rows = await db.fetch_series(site_id, start, end, 60, [e.key, ref[1]])
+        price_key = _price_key(instances[e.instance], price_role) if price_role else None
+        if price_key:
+            rows = await db.fetch_series(site_id, start, end, 60, [e.key, price_key])
             pts = [(r["t"], r["delta"]) for r in rows if r["key"] == e.key]
-            prices = [(r["t"], r["avg_sum"] / r["n"]) for r in rows if r["key"] == ref[1] and r["n"]]
+            prices = [(r["t"], r["avg_sum"] / r["n"]) for r in rows if r["key"] == price_key and r["n"]]
             cost = calc.cost_for(pts, prices)
         s = e.sensor
         sources.append({

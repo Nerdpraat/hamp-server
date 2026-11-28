@@ -42,10 +42,6 @@ def test_full_self_consumption():
     assert s["self_sufficiency_pct"] == 50
 
 
-def test_cost_fixed():
-    assert calc.cost_for([(0, 2.0), (60, 3.0)], fixed=0.5) == pytest.approx(2.5)
-
-
 def test_cost_variable_forward_fill():
     pts = [(0, 1.0), (60, 1.0), (120, 1.0)]
     prices = [(60, 0.2), (120, 0.4)]

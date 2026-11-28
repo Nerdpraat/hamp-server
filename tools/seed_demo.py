@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.config import load_config  # noqa: E402
 from app.db import Database  # noqa: E402
-from simulation import SPECS, Sim, config_message, readings  # noqa: E402
-
+from app.ingest import parse_config  # noqa: E402
+from simulation import SPECS, Sim, config_message, readings, static_values  # noqa: E402
 
 
 async def seed(config_dir: str, site: str, days: float, state: str | None = None) -> int:
@@ -33,9 +33,10 @@ async def seed(config_dir: str, site: str, days: float, state: str | None = None
     db = Database(os.environ.get("ENERGY_HUB_DB_PATH") or cfg.db_path)
     await db.connect()
     await db.upsert_site(site, site_def.name)
-    message = config_message()
-    await db.replace_config(site, message["instances"])
-    await db.set_site_meta(site, {"currency": message["currency"]})
+    currency, instances = parse_config(config_message(), cfg.catalogue)      # as the server stores it
+    await db.replace_config(site, instances)
+    await db.set_site_meta(site, {"currency": currency})
+    await db.set_static_values(site, [(*key.split(".", 1), value) for key, value in static_values().items()])
 
     counter_keys = {f"{iid}.{sid}" for iid, device, _n, readers, _f in SPECS for sid in readers
                     if cfg.catalogue.sensor(device, sid).kind == "counter"}

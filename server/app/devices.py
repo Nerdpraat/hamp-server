@@ -7,6 +7,8 @@ of the client protocol.
 """
 from __future__ import annotations
 
+import copy
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,9 +31,8 @@ class RoleSpec:
     color: str | None = None
     label: str = ""
     group: str = "other"
-    price: bool = False            # a price slot: may be a fixed number
     dashboard: bool = True         # False: only shown in the generic Devices tab
-    fixed_only: bool = False       # slot takes only a fixed number, never a source
+    static_only: bool = False      # slot holds a client-entered static value, never a series
 
 
 _ROLE_LIST = [
@@ -49,11 +50,11 @@ _ROLE_LIST = [
     RoleSpec("battery_power", "gauge", "W", 1, "#4db6ac", "Battery power", "power"),
     RoleSpec("battery_soc", "gauge", "%", 1, None, "Battery level", "battery_state"),
     RoleSpec("battery_capacity", "gauge", "Wh", 1, None, "Battery capacity", "battery_capacity",
-             fixed_only=True),
+             static_only=True),
     RoleSpec("device_power", "gauge", "W", 1, None, "Device power", "device_power"),
-    RoleSpec("price_import", "gauge", "/kWh", 1, None, "Import price", "price", price=True),
-    RoleSpec("price_export", "gauge", "/kWh", 1, None, "Export price", "price", price=True),
-    RoleSpec("price_gas", "gauge", "/m3", 1, None, "Gas price", "price", price=True),
+    RoleSpec("price_import", "gauge", "/kWh", 1, None, "Import price", "price"),
+    RoleSpec("price_export", "gauge", "/kWh", 1, None, "Export price", "price"),
+    RoleSpec("price_gas", "gauge", "/m3", 1, None, "Gas price", "price"),
 ]
 ROLES: dict[str, RoleSpec] = {r.name: r for r in _ROLE_LIST}
 
@@ -78,10 +79,10 @@ def _as_list(value: Any) -> list[str]:
 
 
 class NumberInput(BaseModel):
-    """How a client should present the number box of a slot that takes a fixed number.
+    """The settings of a Home Assistant number selector.
 
-    The names follow Home Assistant's number selector. `min` and `max` are also enforced by the
-    server on incoming fixed values.
+    The server checks them at startup and enforces `min` and `max` on static values. `step` is
+    only a hint for the client's input widget.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -101,30 +102,90 @@ class NumberInput(BaseModel):
         return self
 
 
+SELECTOR_TYPES = ("entity", "number", "select", "boolean")
+
+
 class Selector(BaseModel):
-    """Which Home Assistant entities fit a slot (domain and device class), and for a slot that takes a
-    fixed number, how its number box looks (`number`)."""
+    """A native Home Assistant selector, such as `{"entity": {"domain": "sensor"}}` or
+    `{"number": {"min": 0, "max": 100}}`. Exactly one type is allowed.
 
-    domain: list[str] = Field(default_factory=lambda: ["sensor"])
-    device_class: list[str] = Field(default_factory=list)
+    `raw` is what the client receives in `hello`, exactly as written in devices.yaml. An `entity`
+    selector picks a Home Assistant entity (the slot has a series). `number`, `select` and `boolean`
+    describe a *static* slot: the client sends the value the user typed in a `states` message.
+    """
+
+    type: Literal["entity", "number", "select", "boolean"]
+    raw: dict[str, Any]
     number: NumberInput | None = None
+    options: tuple[str, ...] = ()
+    custom_value: bool = False
 
-    @field_validator("domain", "device_class", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def _listify(cls, v: Any) -> list[str]:
-        return _as_list(v)
+    def _parse(cls, data: Any) -> Any:
+        if isinstance(data, cls) or (isinstance(data, dict) and "raw" in data and "type" in data):
+            return data
+        if isinstance(data, dict) and data.keys() & {"domain", "device_class"}:
+            raise ValueError("selector uses the old flat form: write it as a native Home Assistant "
+                             "selector, for example `entity: {domain: sensor, device_class: power}`")
+        if not isinstance(data, dict) or len(data) != 1:
+            raise ValueError(
+                "selector must be a native Home Assistant selector with exactly one of "
+                f"{', '.join(SELECTOR_TYPES)} (for example {{entity: {{domain: sensor}}}})")
+        (kind, config), = data.items()
+        if kind not in SELECTOR_TYPES:
+            raise ValueError(f"unknown selector type {kind!r}: use one of {', '.join(SELECTOR_TYPES)}")
+        if config is None:
+            config = {}
+        if not isinstance(config, dict):
+            raise ValueError(f"selector.{kind} must be a mapping")
+        out: dict[str, Any] = {"type": kind, "raw": {kind: config}}
+        if kind == "entity":
+            if config.get("multiple"):
+                raise ValueError("selector.entity.multiple is not supported: a slot takes one entity")
+        elif kind == "number":
+            out["number"] = NumberInput.model_validate(config)
+        elif kind == "select":
+            if config.get("multiple"):
+                raise ValueError("selector.select.multiple is not supported: a slot takes one value")
+            options = config.get("options")
+            if not isinstance(options, list) or not options:
+                raise ValueError("selector.select.options must be a non-empty list")
+            values = []
+            for opt in options:
+                value = opt.get("value") if isinstance(opt, dict) else opt
+                if not isinstance(value, str):
+                    raise ValueError("selector.select.options must be strings or {value, label} mappings "
+                                     "with a string value")
+                values.append(value)
+            if len(set(values)) != len(values):
+                raise ValueError("selector.select.options has duplicate values")
+            out["options"] = tuple(values)
+            out["custom_value"] = config.get("custom_value") is True
+        elif config:
+            raise ValueError("selector.boolean takes no settings")
+        return out
 
-    @field_validator("domain")
-    @classmethod
-    def _domain_not_empty(cls, v: list[str]) -> list[str]:
-        return v or ["sensor"]
+    @property
+    def static(self) -> bool:
+        """True when the client sends the value itself instead of an entity's readings."""
+        return self.type != "entity"
+
+    @property
+    def entity(self) -> dict[str, Any]:
+        """The settings of an `entity` selector (empty for the other types)."""
+        return self.raw.get("entity", {}) if self.type == "entity" else {}
+
+    @property
+    def device_class(self) -> list[str]:
+        return _as_list(self.entity.get("device_class"))
 
 
 class SensorDef(BaseModel):
     id: str
     name: str = Field(min_length=1, max_length=80)
     description: str = ""
-    selector: Selector = Field(default_factory=Selector)
+    selector: Selector = Field(default_factory=lambda: Selector.model_validate({"entity": {"domain": "sensor"}}))
     role: str | None = None
     kind: Literal["counter", "gauge"] | None = None
     unit: str | None = None
@@ -153,11 +214,15 @@ class SensorDef(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _number_needs_a_fixed_slot(self) -> "SensorDef":
+    def _selector_fits_role(self) -> "SensorDef":
         role = ROLES[self.role] if self.role else None
-        if self.selector.number is not None and not (role and (role.price or role.fixed_only)):
-            raise ValueError("selector.number is only allowed on a sensor that takes a fixed number "
-                             "(a price role or a fixed-only role such as battery_capacity)")
+        if role and role.static_only:
+            if self.selector.type != "number":
+                raise ValueError(f"role {role.name!r} holds a static number, so its selector must be a "
+                                 f"number selector, not {self.selector.type!r}")
+        elif self.selector.static and role:
+            raise ValueError(f"role {role.name!r} needs an entity selector: a {self.selector.type} "
+                             "selector has no readings")
         return self
 
 
@@ -203,8 +268,11 @@ class ResolvedSensor:
     unit: str
     sign: int
     color: str | None
-    allow_fixed: bool
-    fixed_only: bool
+
+    @property
+    def static(self) -> bool:
+        """True when the client sends the value itself (a number, select or boolean slot)."""
+        return self.selector.static
 
     @property
     def group(self) -> str:
@@ -224,10 +292,8 @@ def _resolve(device: DeviceDef, s: SensorDef) -> ResolvedSensor:
     unit = s.unit if s.unit is not None else (role.unit if role else (class_unit or ""))
     sign = s.sign if s.sign is not None else (role.sign if role else 1)
     color = s.color or (role.color if role else None)
-    fixed_only = bool(role and role.fixed_only)
-    allow_fixed = bool(role and (role.price or role.fixed_only))
     return ResolvedSensor(device.id, s.id, s.name, s.description, s.selector, s.role,
-                          kind, unit, sign, color, allow_fixed, fixed_only)
+                          kind, unit, sign, color)
 
 
 class Catalogue(BaseModel):
@@ -266,20 +332,49 @@ class Catalogue(BaseModel):
         for d in self.devices:
             sensors = []
             for rs in self.sensors(d.id):
-                selector: dict[str, Any] = {"domain": list(rs.selector.domain)}
-                if rs.selector.device_class:
-                    selector["device_class"] = list(rs.selector.device_class)
-                if rs.selector.number is not None:
-                    selector["number"] = rs.selector.number.model_dump(exclude_none=True)
                 sensors.append({
                     "id": rs.id, "name": rs.name, "description": rs.description,
-                    "kind": rs.kind, "unit": rs.unit, "allow_fixed": rs.allow_fixed,
-                    "fixed_only": rs.fixed_only,
-                    "selector": selector,
+                    "kind": rs.kind, "unit": rs.unit,
+                    "selector": copy.deepcopy(rs.selector.raw),
                 })
             out.append({"id": d.id, "name": d.name, "description": d.description,
                         "category": d.category, "sensors": sensors})
         return out
+
+
+class StaticRejected(ValueError):
+    """A static value does not fit the slot's selector. The message says why."""
+
+
+def validate_static(sensor: ResolvedSensor, value: Any) -> float | str | bool:
+    """Check `value` against the selector of a static slot and return what to store.
+
+    Raises StaticRejected otherwise. Compare with `is`/`isinstance` only: 0, 0.0, False and "" are
+    legitimate values and must never be treated as missing.
+    """
+    sel = sensor.selector
+    if sel.type == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise StaticRejected("must be a number")
+        if not math.isfinite(value):
+            raise StaticRejected("must be a finite number")
+        limits = sel.number
+        if limits.min is not None and value < limits.min:
+            raise StaticRejected(f"must be at least {limits.min:g}")
+        if limits.max is not None and value > limits.max:
+            raise StaticRejected(f"must be at most {limits.max:g}")
+        return float(value)
+    if sel.type == "select":
+        if not isinstance(value, str):
+            raise StaticRejected("must be a string")
+        if value not in sel.options and not sel.custom_value:
+            raise StaticRejected(f"must be one of {', '.join(sel.options)}")
+        return value
+    if sel.type == "boolean":
+        if not isinstance(value, bool):
+            raise StaticRejected("must be true or false")
+        return value
+    raise StaticRejected("this slot takes readings of an entity, not a static value")
 
 
 def parse_catalogue(data: object) -> Catalogue:

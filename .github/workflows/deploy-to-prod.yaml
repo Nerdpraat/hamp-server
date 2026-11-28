@@ -19,7 +19,8 @@ jobs:
           CONFIG_DIR: ${{ vars.CONFIG_DIR }}
           DATA_DIR: ${{ vars.DATA_DIR }}
           HUB_PORT: ${{ vars.HUB_PORT }}
-        run: sudo -E docker compose -f docker-compose.yml -p nerdpraat-hamp up --build -d
+        run: |
+          sudo -E docker compose -f docker-compose.yml -p nerdpraat-hamp up --build -d -e CONFIG_DIR=${CONFIG_DIR} -e DATA_DIR=${DATA_DIR} -e HUB_PORT=${HUB_PORT}
       
       - name: Clean up unused Docker resources
         run: sudo -E docker system prune -f

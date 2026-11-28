@@ -135,6 +135,30 @@ def test_config_is_stored_and_acknowledged(client):
 CAP = {"source": "static"}
 
 
+def site_currency(client):
+    sites = {x["id"]: x for x in client.portal.call(client.app.state.db.list_sites)}
+    return sites["home"]["meta"].get("currency")
+
+
+def test_a_config_without_currency_keeps_the_stored_one(client):
+    with opened(client) as c:
+        c.call(config(BATTERY))                                        # currency EUR
+        assert site_currency(client) == "EUR"
+        no_currency = {"type": "config", "instances": [BATTERY]}
+        assert c.call(no_currency)["type"] == "ack"
+        assert site_currency(client) == "EUR"
+        c.call({**no_currency, "currency": "USD"})                     # an explicit one still changes it
+        assert site_currency(client) == "USD"
+        c.call({**no_currency, "currency": ""})                        # and so can an empty one
+    assert site_currency(client) == ""
+
+
+def test_a_null_currency_is_invalid(client):
+    with opened(client) as c:
+        err = c.call({"type": "config", "currency": None, "instances": [BATTERY]})
+    assert err["code"] == "invalid_config" and err["path"] == "currency"
+
+
 def with_capacity(**extra):
     return {**BATTERY, "sensors": {**BATTERY["sensors"], "capacity": CAP, **extra}}
 

@@ -75,10 +75,13 @@ def _is_number(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str, list[dict]]:
-    """Validate a `config` message. Returns (currency, instances) or raises ConfigProblem."""
-    currency = msg.get("currency", "")
-    if not isinstance(currency, str) or len(currency) > 8:
+def parse_config(msg: dict, catalogue: Catalogue) -> tuple[str | None, list[dict]]:
+    """Validate a `config` message. Returns (currency, instances) or raises ConfigProblem.
+
+    `currency` is None when the message has none: the site keeps the currency it had.
+    """
+    currency = msg.get("currency") if "currency" in msg else None
+    if "currency" in msg and (not isinstance(currency, str) or len(currency) > 8):
         raise ConfigProblem("currency", "must be a text of at most 8 characters")
     instances = msg.get("instances")
     if not isinstance(instances, list):
@@ -240,7 +243,8 @@ async def _handle_config(st, site_id: str, msg: dict, keys: dict[str, Slot]) -> 
         return _error("invalid_config", problem.message, problem.path)
 
     removed = await st.db.replace_config(site_id, instances)
-    await st.db.set_site_meta(site_id, {"currency": currency})
+    if currency is not None:
+        await st.db.set_site_meta(site_id, {"currency": currency})
     new_keys = _slots(instances, st.config.catalogue)
     st.hub.forget(site_id, [k for k in keys if k not in new_keys])
     keys.clear()

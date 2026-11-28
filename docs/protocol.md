@@ -176,7 +176,8 @@ Replaces everything the server knew about this site.
     refused on a static slot.
 
   A slot that has no entry simply has no data.
-* `currency`: an ISO code of up to 8 characters, used to format costs.
+* `currency` (optional): an ISO code of up to 8 characters, used to format costs. When it is missing,
+  the site keeps the currency from an earlier `config`.
 * **Effect.** Instances and sensors that were in the previous `config` but are missing from this
   one are **deleted together with their stored history**. The `ack` lists what was removed:
   `removed.instances` are the ids of instances that are gone, `removed.sensors` the keys of sensors

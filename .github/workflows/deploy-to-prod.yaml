@@ -9,6 +9,7 @@ on:
 
 jobs:
   docker-compose:
+    environment: Prod
     runs-on: [self-hosted, Linux, np-prod]
     steps:
       - name: Checkout code
